@@ -1,5 +1,6 @@
 # SmartDesk — Multi-Agent Productivity Assistant
-# Main agent definitions following ADK patterns from codelabs
+# Follows docs/adk.md — Codelab 2 (zoo_guide_agent) patterns exactly
+# Structure: root_agent → sub-agents with output_key → SequentialAgent formatter
 
 import os
 import logging
@@ -9,28 +10,40 @@ from google.adk import Agent
 from google.adk.agents import SequentialAgent
 from google.adk.tools.tool_context import ToolContext
 
+import google.auth
+import google.auth.transport.requests
+
 from . import tools
 
-# --- Setup ---
+# --- Setup Logging and Environment ---
+# Pattern from docs/adk.md — Codelab 2, "Imports and Initial Setup"
+
 load_dotenv()
+
 model_name = os.getenv("MODEL", "gemini-2.5-flash")
 
 
-# --- State Management Tools ---
+# --- State Management Tool ---
+# Pattern from docs/adk.md — Codelab 2, "add_prompt_to_state"
 
-def save_user_request(tool_context: ToolContext, request: str) -> dict[str, str]:
-    """Saves the user's request to shared state for sub-agents to access."""
-    tool_context.state["USER_REQUEST"] = request
-    logging.info(f"[State updated] USER_REQUEST: {request}")
+def add_prompt_to_state(
+    tool_context: ToolContext, prompt: str
+) -> dict[str, str]:
+    """Saves the user's initial prompt to the state."""
+    tool_context.state["PROMPT"] = prompt
+    logging.info(f"[State updated] Added to PROMPT: {prompt}")
     return {"status": "success"}
 
 
 # --- Sub-Agent 1: InboxAgent (Gmail via MCP) ---
+# Tools from docs/mcp.md — StreamableHTTPConnectionParams with OAuth
+
+gmail_toolset = tools.get_gmail_mcp_toolset()
 
 inbox_agent = Agent(
     name="inbox_agent",
     model=model_name,
-    description="Handles email-related tasks: reading, searching, summarizing, and drafting emails via Gmail.",
+    description="Handles email tasks: reading, searching, summarizing, and drafting emails via Gmail.",
     instruction="""
     You are the email assistant for SmartDesk. You help users manage their Gmail inbox.
     You can:
@@ -42,15 +55,17 @@ inbox_agent = Agent(
     Use the Gmail MCP tools available to you to complete these tasks.
     Always provide concise, actionable summaries.
 
-    USER_REQUEST:
-    { USER_REQUEST }
+    PROMPT:
+    { PROMPT }
     """,
-    tools=[tools.get_gmail_mcp_toolset()],
+    tools=[gmail_toolset] if gmail_toolset else [],
     output_key="inbox_data",
 )
 
 
 # --- Sub-Agent 2: PlannerAgent (Google Calendar via MCP) ---
+
+calendar_toolset = tools.get_calendar_mcp_toolset()
 
 planner_agent = Agent(
     name="planner_agent",
@@ -67,15 +82,16 @@ planner_agent = Agent(
     Use the Google Calendar MCP tools available to you.
     Always mention specific times and dates clearly.
 
-    USER_REQUEST:
-    { USER_REQUEST }
+    PROMPT:
+    { PROMPT }
     """,
-    tools=[tools.get_calendar_mcp_toolset()],
+    tools=[calendar_toolset] if calendar_toolset else [],
     output_key="planner_data",
 )
 
 
-# --- Sub-Agent 3: DataAgent (AlloyDB) ---
+# --- Sub-Agent 3: DataAgent (AlloyDB with vector search) ---
+# Tools from docs/alloydb.md — Codelab 3, vector search with embedding()
 
 data_agent = Agent(
     name="data_agent",
@@ -88,12 +104,12 @@ data_agent = Agent(
     - Search notes semantically (e.g., "what did we discuss about the product launch?")
     - Look up contact information
     - Query and update tasks
-    - Find related information across notes using vector similarity
+    - Add new notes and tasks
 
     Use the database tools available to you.
 
-    USER_REQUEST:
-    { USER_REQUEST }
+    PROMPT:
+    { PROMPT }
     """,
     tools=[
         tools.search_notes,
@@ -106,15 +122,16 @@ data_agent = Agent(
 )
 
 
-# --- Response Formatter (SequentialAgent output) ---
+# --- Response Formatter Agent ---
+# Pattern from docs/adk.md — Codelab 2, "Response Formatter Agent"
 
 response_formatter = Agent(
     name="response_formatter",
     model=model_name,
     description="Synthesizes all gathered information into a clear, friendly response.",
     instruction="""
-    You are the final voice of SmartDesk. Your job is to take all the data gathered
-    by the other agents and present it as a unified, helpful response to the user.
+    You are the friendly voice of SmartDesk. Your task is to take the gathered data
+    and present it to the user in a complete and helpful answer.
 
     Available data (use whichever is present):
     - INBOX_DATA: { inbox_data }
@@ -131,6 +148,8 @@ response_formatter = Agent(
 
 
 # --- Root Agent (Orchestrator) ---
+# Pattern from docs/adk.md — Codelab 2, "Assemble the main workflow"
+# root_agent is the ADK entry point — this variable name is mandatory
 
 root_agent = Agent(
     name="smartdesk",
@@ -141,17 +160,17 @@ root_agent = Agent(
     sub-agents to help users manage their work life.
 
     When a user makes a request:
-    1. Use the 'save_user_request' tool to store their request in state.
-    2. Analyze what the user needs and transfer to the appropriate sub-agent(s):
-       - Email-related (read, search, draft, summarize emails) → inbox_agent
-       - Calendar-related (schedule, meetings, conflicts, availability) → planner_agent
-       - Knowledge-related (notes, contacts, tasks, past discussions) → data_agent
-    3. For complex multi-step requests (e.g., "prepare me for my 3pm meeting"),
+    1. Use the 'add_prompt_to_state' tool to save their request.
+    2. Analyze what the user needs and transfer to the appropriate sub-agent:
+       - Email-related (read, search, draft, summarize emails) -> inbox_agent
+       - Calendar-related (schedule, meetings, conflicts, availability) -> planner_agent
+       - Knowledge-related (notes, contacts, tasks, past discussions) -> data_agent
+    3. For complex requests that span multiple domains (e.g., "prepare me for my 3pm meeting"),
        you may need to call multiple sub-agents in sequence.
 
     Always be friendly and proactive. If the user's request is ambiguous,
     ask a clarifying question before routing.
     """,
-    tools=[save_user_request],
+    tools=[add_prompt_to_state],
     sub_agents=[inbox_agent, planner_agent, data_agent, response_formatter],
 )

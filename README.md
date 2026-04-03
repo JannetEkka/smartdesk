@@ -1,124 +1,113 @@
 # SmartDesk — Multi-Agent Productivity Assistant
 
-A multi-agent AI system built with **Google ADK**, **Gemini**, **MCP**, and **AlloyDB** that helps users manage emails, schedules, and personal knowledge through a single conversational API.
-
-Built for the **Google Cloud Hackathon** — Multi-Agent Productivity Assistant track.
+A multi-agent AI system built with **Google ADK**, **Gemini 2.5 Flash**, **MCP**, and **AlloyDB** for the **Google Cloud Hackathon** (Multi-Agent Productivity Assistant track).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│              User (API on Cloud Run)             │
-└────────────────────┬────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────┐
-│          SmartDesk Orchestrator (root_agent)      │
-│            Routes to sub-agents via ADK           │
-└──────┬──────────────┬──────────────────┬────────┘
-       │              │                  │
-┌──────▼─────┐ ┌──────▼──────┐ ┌────────▼───────┐
-│ InboxAgent │ │ PlannerAgent│ │   DataAgent    │
-│ Gmail MCP  │ │Calendar MCP │ │ AlloyDB queries│
-└──────┬─────┘ └──────┬──────┘ └────────┬───────┘
-       │              │                  │
-┌──────▼─────┐ ┌──────▼──────┐ ┌────────▼───────┐
-│Gmail MCP   │ │Calendar MCP │ │   AlloyDB      │
-│  Server    │ │   Server    │ │ (Vector Search)│
-└────────────┘ └─────────────┘ └────────────────┘
+User (HTTP request)
+    |
+    v
+root_agent (SmartDesk orchestrator)
+    |-- inbox_agent ----> Gmail MCP Server
+    |-- planner_agent --> Google Calendar MCP Server
+    |-- data_agent -----> AlloyDB (vector search)
+    '-- response_formatter
+            |
+            v
+      Final response
 ```
 
 ## Tech Stack
 
 | Component | Technology | Track |
 |-----------|-----------|-------|
-| Agent Framework | Google ADK (Agent Development Kit) | Track 1 |
-| LLM | Gemini 2.5 Flash | Track 1 |
+| Agent Framework | Google ADK 1.14.0 | Track 1 |
+| LLM | Gemini 2.5 Flash (Vertex AI) | Track 1 |
 | Deployment | Cloud Run (serverless) | Track 1 |
 | Email Integration | Gmail MCP Server | Track 2 |
 | Calendar Integration | Google Calendar MCP Server | Track 2 |
 | Database | AlloyDB for PostgreSQL | Track 3 |
-| Vector Search | AlloyDB AI + text-embedding-005 | Track 3 |
-| Natural Language Queries | AlloyDB AI natural language | Track 3 |
-
-## Features
-
-- **Multi-agent orchestration** — Root agent routes to specialized sub-agents
-- **Email management** — Summarize, search, and draft emails via Gmail MCP
-- **Calendar management** — Check schedule, find conflicts, book meetings via Calendar MCP
-- **Personal knowledge base** — Store contacts, notes, and tasks in AlloyDB with semantic vector search
-- **Multi-step workflows** — "Prepare me for my 3pm meeting" triggers calendar → notes → email pipeline
-- **API-based** — Deployed on Cloud Run, callable via HTTP endpoint
+| Vector Search | text-embedding-005 (768 dims) | Track 3 |
 
 ## Project Structure
 
 ```
 smartdesk/
-├── README.md
-├── CLAUDE.md                          # Claude Code instructions
-├── .gitignore
-├── docs/
-│   ├── adk.md                         # ADK reference (Track 1)
-│   ├── mcp.md                         # MCP reference (Track 2)
-│   └── alloydb.md                     # AlloyDB reference (Track 3)
 ├── smartdesk_agent/
 │   └── smartdesk_app/
-│       ├── __init__.py
-│       ├── agent.py                   # Main agent definitions
-│       ├── tools.py                   # MCP toolset configs & custom tools
-│       └── .env                       # Environment variables (not committed)
+│       ├── __init__.py        # from . import agent
+│       ├── agent.py           # Agent definitions (root_agent entry point)
+│       ├── tools.py           # MCP toolsets + AlloyDB query functions
+│       └── .env               # Environment config (not committed)
 ├── setup/
-│   ├── setup_alloydb.sql              # AlloyDB schema + sample data
-│   └── setup_env.sh                   # Environment setup script
+│   ├── setup_env.sh           # Environment setup script
+│   └── setup_alloydb.sql      # AlloyDB schema + sample data
+├── docs/
+│   ├── adk.md                 # ADK reference (Track 1)
+│   ├── mcp.md                 # MCP reference (Track 2)
+│   └── alloydb.md             # AlloyDB reference (Track 3)
 ├── requirements.txt
 ├── Dockerfile
-└── .env.example
+├── .env.example
+└── CLAUDE.md
 ```
 
 ## Quick Start
 
-### Prerequisites
-- Google Cloud project with billing enabled
-- AlloyDB cluster and instance
-- APIs enabled: Vertex AI, Cloud Run, AlloyDB, Compute Engine
-
-### Setup
-
 ```bash
-# Clone the repo
-git clone https://github.com/<your-username>/smartdesk.git
-cd smartdesk
+# 1. Set project (docs/adk.md — Codelab 1)
+gcloud config set project smartdesk-492115
 
-# Create virtual environment
-python3 -m venv .venv
+# 2. Run environment setup
+chmod +x setup/setup_env.sh
+./setup/setup_env.sh
+
+# 3. Create virtual environment (docs/adk.md — Codelab 1)
+uv venv --python 3.12
 source .venv/bin/activate
+uv pip install -r requirements.txt
 
-# Install dependencies
-pip install -r requirements.txt
+# 4. Configure AlloyDB and MCP URLs in .env
+# See .env.example for all required variables
 
-# Copy and configure environment
-cp .env.example smartdesk_agent/smartdesk_app/.env
-# Edit .env with your project details
-
-# Run locally
+# 5. Run locally (docs/adk.md — Codelab 1)
 cd smartdesk_agent
 adk web
+# Open http://localhost:8000
 ```
 
-### Deploy to Cloud Run
+## Deploy to Cloud Run
 
 ```bash
+# Pattern from docs/adk.md — Codelab 2, Section 10
+source smartdesk_agent/smartdesk_app/.env
+
+# Create service account
+gcloud iam service-accounts create ${SA_NAME} \
+    --display-name="SmartDesk Service Account"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$SERVICE_ACCOUNT" \
+  --role="roles/aiplatform.user"
+
+# Deploy
+uvx --from google-adk==1.14.0 \
 adk deploy cloud_run \
-    --project $PROJECT_ID \
-    --region us-central1 \
-    --service_name smartdesk-agent \
-    smartdesk_agent
+  --project=$PROJECT_ID \
+  --region=us-central1 \
+  --service_name=smartdesk-agent \
+  --with_ui \
+  . \
+  -- \
+  --service-account=$SERVICE_ACCOUNT
 ```
 
 ## Documentation
 
-- [ADK Reference (Track 1)](docs/adk.md) — Agent Development Kit patterns, deployment, A2A
-- [MCP Reference (Track 2)](docs/mcp.md) — Model Context Protocol integration, MCP servers
-- [AlloyDB Reference (Track 3)](docs/alloydb.md) — Database setup, vector search, natural language queries
+- [ADK Reference (Track 1)](docs/adk.md)
+- [MCP Reference (Track 2)](docs/mcp.md)
+- [AlloyDB Reference (Track 3)](docs/alloydb.md)
 
 ## License
 

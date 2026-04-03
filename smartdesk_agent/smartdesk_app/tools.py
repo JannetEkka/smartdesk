@@ -1,33 +1,60 @@
 # SmartDesk — Tools & MCP Toolset Configuration
-# Connects sub-agents to Gmail MCP, Calendar MCP, and AlloyDB
+# Follows patterns from docs/mcp.md (BigQuery MCP) and docs/alloydb.md (direct connection)
 
 import os
 import logging
 from dotenv import load_dotenv
+
+import google.auth
+import google.auth.transport.requests
 
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.adk.tools.tool_context import ToolContext
 
 import sqlalchemy
-from google.cloud.alloydb.connector import Connector
 
 load_dotenv()
 
 
 # =============================================================================
 # MCP Toolsets (Track 2 — Model Context Protocol)
+# Follows docs/mcp.md — Codelab 1, "MCP Toolset Initialization"
+# Uses OAuth Bearer token pattern from get_bigquery_mcp_toolset()
 # =============================================================================
 
+def _get_oauth_token():
+    """Get OAuth token using application default credentials.
+    Pattern from docs/mcp.md — Codelab 1, get_bigquery_mcp_toolset()."""
+    credentials, project_id = google.auth.default(
+        scopes=[
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/gmail.compose",
+            "https://www.googleapis.com/auth/calendar.readonly",
+            "https://www.googleapis.com/auth/calendar.events",
+        ]
+    )
+    credentials.refresh(google.auth.transport.requests.Request())
+    return credentials.token, project_id
+
+
 def get_gmail_mcp_toolset():
-    """Configure MCP toolset for Gmail integration."""
-    # TODO: Replace with actual Gmail MCP server URL once available
-    # For hackathon, this uses the Google-hosted Gmail MCP server
-    gmail_mcp_url = os.getenv("GMAIL_MCP_URL", "https://gmail.mcp.claude.com/mcp")
+    """Configure MCP toolset for Gmail integration.
+    Pattern from docs/mcp.md — StreamableHTTPConnectionParams with OAuth."""
+    gmail_mcp_url = os.getenv("GMAIL_MCP_URL", "")
+    if not gmail_mcp_url:
+        logging.warning("GMAIL_MCP_URL not set — Gmail tools will not be available.")
+        return []
+
+    oauth_token, project_id = _get_oauth_token()
 
     tools = MCPToolset(
         connection_params=StreamableHTTPConnectionParams(
             url=gmail_mcp_url,
+            headers={
+                "Authorization": f"Bearer {oauth_token}",
+                "x-goog-user-project": project_id,
+            },
             timeout=15,
         )
     )
@@ -36,13 +63,22 @@ def get_gmail_mcp_toolset():
 
 
 def get_calendar_mcp_toolset():
-    """Configure MCP toolset for Google Calendar integration."""
-    # TODO: Replace with actual Calendar MCP server URL once available
-    calendar_mcp_url = os.getenv("CALENDAR_MCP_URL", "https://gcal.mcp.claude.com/mcp")
+    """Configure MCP toolset for Google Calendar integration.
+    Pattern from docs/mcp.md — StreamableHTTPConnectionParams with OAuth."""
+    calendar_mcp_url = os.getenv("CALENDAR_MCP_URL", "")
+    if not calendar_mcp_url:
+        logging.warning("CALENDAR_MCP_URL not set — Calendar tools will not be available.")
+        return []
+
+    oauth_token, project_id = _get_oauth_token()
 
     tools = MCPToolset(
         connection_params=StreamableHTTPConnectionParams(
             url=calendar_mcp_url,
+            headers={
+                "Authorization": f"Bearer {oauth_token}",
+                "x-goog-user-project": project_id,
+            },
             timeout=15,
         )
     )
@@ -52,26 +88,26 @@ def get_calendar_mcp_toolset():
 
 # =============================================================================
 # AlloyDB Connection (Track 3 — AI-ready databases)
+# Follows docs/alloydb.md — Codelab 2, direct pg8000 connection
+# Pattern: postgresql+pg8000://postgres:password@host:port/postgres
 # =============================================================================
 
 def _get_db_engine():
-    """Create SQLAlchemy engine connected to AlloyDB."""
-    connector = Connector()
+    """Create SQLAlchemy engine with direct pg8000 connection.
+    Pattern from docs/alloydb.md — Codelab 2, DATABASE_URL approach."""
+    db_url = os.getenv("DATABASE_URL", "")
+    if db_url:
+        return sqlalchemy.create_engine(db_url)
 
-    def getconn():
-        return connector.connect(
-            instance_uri=os.getenv("ALLOYDB_INSTANCE_URI", ""),
-            driver="pg8000",
-            user=os.getenv("ALLOYDB_USER", "postgres"),
-            password=os.getenv("ALLOYDB_PASSWORD", ""),
-            db=os.getenv("ALLOYDB_DB", "postgres"),
-        )
-
-    engine = sqlalchemy.create_engine(
-        "postgresql+pg8000://",
-        creator=getconn,
+    # Fallback: build URL from individual env vars
+    user = os.getenv("ALLOYDB_USER", "postgres")
+    password = os.getenv("ALLOYDB_PASSWORD", "")
+    host = os.getenv("ALLOYDB_IP", "127.0.0.1")
+    port = os.getenv("ALLOYDB_PORT", "5432")
+    db = os.getenv("ALLOYDB_DB", "postgres")
+    return sqlalchemy.create_engine(
+        f"postgresql+pg8000://{user}:{password}@{host}:{port}/{db}"
     )
-    return engine
 
 
 def _query_db(sql: str, params: dict = None) -> list[dict]:
@@ -89,11 +125,12 @@ def _query_db(sql: str, params: dict = None) -> list[dict]:
 
 # =============================================================================
 # AlloyDB Tools (exposed to DataAgent)
+# Follows docs/alloydb.md — Codelab 3, vector search with embedding()
 # =============================================================================
 
 def search_notes(tool_context: ToolContext, query: str) -> list[dict]:
-    """Search meeting notes and documents using vector similarity in AlloyDB.
-    Uses text-embedding-005 to find semantically similar notes."""
+    """Search meeting notes using vector similarity.
+    Uses embedding() and <=> operator from docs/alloydb.md — Codelab 3, Task 4."""
     sql = """
     SELECT id, title, content, created_at,
            1 - (content_embedding <=> embedding('text-embedding-005', :query)::vector) AS similarity
@@ -136,7 +173,8 @@ def get_tasks(tool_context: ToolContext, status: str = "pending") -> list[dict]:
 
 
 def add_note(tool_context: ToolContext, title: str, content: str) -> dict:
-    """Add a new note to the knowledge base with auto-generated vector embedding."""
+    """Add a new note with auto-generated vector embedding.
+    Uses in-database embeddings from docs/alloydb.md — Codelab 2."""
     sql = """
     INSERT INTO notes (title, content, content_embedding)
     VALUES (:title, :content, embedding('text-embedding-005', :content)::vector)

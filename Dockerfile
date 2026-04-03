@@ -1,3 +1,7 @@
+# SmartDesk — Container for Cloud Run deployment
+# Note: Preferred deployment is via `adk deploy cloud_run` CLI (docs/adk.md — Codelab 2)
+# This Dockerfile is for manual builds if needed
+
 FROM python:3.12-slim
 
 WORKDIR /app
