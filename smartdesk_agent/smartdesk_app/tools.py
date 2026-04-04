@@ -93,22 +93,30 @@ def get_calendar_mcp_toolset():
 # Pattern: postgresql+pg8000://postgres:password@host:port/postgres
 # =============================================================================
 
+_engine = None
+
+
 def _get_db_engine():
-    """Create SQLAlchemy engine with direct pg8000 connection.
+    """Create or return cached SQLAlchemy engine with direct pg8000 connection.
     Pattern from docs/alloydb.md — Codelab 2, DATABASE_URL approach."""
+    global _engine
+    if _engine is not None:
+        return _engine
+
     db_url = os.getenv("DATABASE_URL", "")
     if db_url:
-        return sqlalchemy.create_engine(db_url)
-
-    # Fallback: build URL from individual env vars
-    user = os.getenv("ALLOYDB_USER", "postgres")
-    password = os.getenv("ALLOYDB_PASSWORD", "")
-    host = os.getenv("ALLOYDB_IP", "127.0.0.1")
-    port = os.getenv("ALLOYDB_PORT", "5432")
-    db = os.getenv("ALLOYDB_DB", "postgres")
-    return sqlalchemy.create_engine(
-        f"postgresql+pg8000://{user}:{password}@{host}:{port}/{db}"
-    )
+        _engine = sqlalchemy.create_engine(db_url)
+    else:
+        # Fallback: build URL from individual env vars
+        user = os.getenv("ALLOYDB_USER", "postgres")
+        password = os.getenv("ALLOYDB_PASSWORD", "")
+        host = os.getenv("ALLOYDB_IP", "127.0.0.1")
+        port = os.getenv("ALLOYDB_PORT", "5432")
+        db = os.getenv("ALLOYDB_DB", "postgres")
+        _engine = sqlalchemy.create_engine(
+            f"postgresql+pg8000://{user}:{password}@{host}:{port}/{db}"
+        )
+    return _engine
 
 
 def _serialize_value(val):
@@ -217,3 +225,33 @@ def add_task(
     })
     logging.info(f"[add_task] Created task: {title}")
     return results[0] if results else {"error": "Failed to create task"}
+
+
+def update_task(
+    tool_context: ToolContext,
+    task_id: int,
+    status: str = "",
+    priority: str = "",
+) -> dict:
+    """Update a task's status or priority.
+    Status options: pending, in_progress, done.
+    Priority options: high, medium, low."""
+    updates = []
+    params = {"task_id": task_id}
+    if status:
+        updates.append("status = :status")
+        params["status"] = status
+    if priority:
+        updates.append("priority = :priority")
+        params["priority"] = priority
+    if not updates:
+        return {"error": "Provide at least one of status or priority to update."}
+
+    sql = f"""
+    UPDATE tasks SET {', '.join(updates)}
+    WHERE id = :task_id
+    RETURNING id, title, status, priority, due_date;
+    """
+    results = _query_db(sql, params)
+    logging.info(f"[update_task] Updated task {task_id}: {params}")
+    return results[0] if results else {"error": f"Task {task_id} not found"}
