@@ -1,15 +1,16 @@
 # SmartDesk — Tools & MCP Toolset Configuration
-# Follows patterns from docs/mcp.md (BigQuery MCP) and docs/alloydb.md (direct connection)
+# MCP: follows docs/mcp.md — Codelab 3, StdioConnectionParams with custom MCP servers
+# AlloyDB: follows docs/alloydb.md — Codelab 2+3, direct pg8000 connection
 
 import os
+import sys
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
-import google.auth
-import google.auth.transport.requests
-
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
-from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
+from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
+from mcp import StdioServerParameters
 from google.adk.tools.tool_context import ToolContext
 
 import sqlalchemy
@@ -17,73 +18,47 @@ from datetime import date, datetime
 
 load_dotenv()
 
+# Resolve paths to our custom MCP server scripts
+_MCP_SERVERS_DIR = Path(__file__).parent / "mcp_servers"
+_GMAIL_SERVER = str(_MCP_SERVERS_DIR / "gmail_server.py")
+_CALENDAR_SERVER = str(_MCP_SERVERS_DIR / "calendar_server.py")
+
 
 # =============================================================================
 # MCP Toolsets (Track 2 — Model Context Protocol)
-# Follows docs/mcp.md — Codelab 1, "MCP Toolset Initialization"
-# Uses OAuth Bearer token pattern from get_bigquery_mcp_toolset()
+# Follows docs/mcp.md — Codelab 3, "Build an MCP server with ADK tools"
+# Uses StdioConnectionParams to connect to self-hosted MCP server scripts
 # =============================================================================
 
-def _get_oauth_token():
-    """Get OAuth token using application default credentials.
-    Pattern from docs/mcp.md — Codelab 1, get_bigquery_mcp_toolset()."""
-    credentials, project_id = google.auth.default(
-        scopes=[
-            "https://www.googleapis.com/auth/gmail.readonly",
-            "https://www.googleapis.com/auth/gmail.compose",
-            "https://www.googleapis.com/auth/calendar.readonly",
-            "https://www.googleapis.com/auth/calendar.events",
-        ]
-    )
-    credentials.refresh(google.auth.transport.requests.Request())
-    return credentials.token, project_id
-
-
 def get_gmail_mcp_toolset():
-    """Configure MCP toolset for Gmail integration.
-    Pattern from docs/mcp.md — StreamableHTTPConnectionParams with OAuth."""
-    gmail_mcp_url = os.getenv("GMAIL_MCP_URL", "")
-    if not gmail_mcp_url:
-        logging.warning("GMAIL_MCP_URL not set — Gmail tools will not be available.")
-        return []
-
-    oauth_token, project_id = _get_oauth_token()
-
+    """Configure MCP toolset for Gmail via self-hosted MCP server.
+    Pattern from docs/mcp.md — Codelab 3, StdioConnectionParams + StdioServerParameters."""
     tools = MCPToolset(
-        connection_params=StreamableHTTPConnectionParams(
-            url=gmail_mcp_url,
-            headers={
-                "Authorization": f"Bearer {oauth_token}",
-                "x-goog-user-project": project_id,
-            },
+        connection_params=StdioConnectionParams(
+            server_params=StdioServerParameters(
+                command=sys.executable,
+                args=[_GMAIL_SERVER],
+            ),
             timeout=15,
-        )
+        ),
     )
-    logging.info("Gmail MCP Toolset configured.")
+    logging.info("Gmail MCP Toolset configured (stdio).")
     return tools
 
 
 def get_calendar_mcp_toolset():
-    """Configure MCP toolset for Google Calendar integration.
-    Pattern from docs/mcp.md — StreamableHTTPConnectionParams with OAuth."""
-    calendar_mcp_url = os.getenv("CALENDAR_MCP_URL", "")
-    if not calendar_mcp_url:
-        logging.warning("CALENDAR_MCP_URL not set — Calendar tools will not be available.")
-        return []
-
-    oauth_token, project_id = _get_oauth_token()
-
+    """Configure MCP toolset for Google Calendar via self-hosted MCP server.
+    Pattern from docs/mcp.md — Codelab 3, StdioConnectionParams + StdioServerParameters."""
     tools = MCPToolset(
-        connection_params=StreamableHTTPConnectionParams(
-            url=calendar_mcp_url,
-            headers={
-                "Authorization": f"Bearer {oauth_token}",
-                "x-goog-user-project": project_id,
-            },
+        connection_params=StdioConnectionParams(
+            server_params=StdioServerParameters(
+                command=sys.executable,
+                args=[_CALENDAR_SERVER],
+            ),
             timeout=15,
-        )
+        ),
     )
-    logging.info("Calendar MCP Toolset configured.")
+    logging.info("Calendar MCP Toolset configured (stdio).")
     return tools
 
 

@@ -10,9 +10,6 @@ from google.adk import Agent
 from google.adk.agents import SequentialAgent
 from google.adk.tools.tool_context import ToolContext
 
-import google.auth
-import google.auth.transport.requests
-
 from . import tools
 
 # --- Setup Logging and Environment ---
@@ -36,7 +33,7 @@ def add_prompt_to_state(
 
 
 # --- Sub-Agent 1: InboxAgent (Gmail via MCP) ---
-# Tools from docs/mcp.md — StreamableHTTPConnectionParams with OAuth
+# Tools from docs/mcp.md — Codelab 3, StdioConnectionParams with custom MCP server
 
 gmail_toolset = tools.get_gmail_mcp_toolset()
 
@@ -49,24 +46,24 @@ inbox_agent = Agent(
     manage their inbox.
 
     CAPABILITIES:
-    - Search and read emails by sender, subject, or keywords
-    - Summarize unread or recent emails
-    - Draft and send reply emails
-    - Find threads from specific contacts
+    - **list_emails**: List recent inbox emails with subject, sender, and snippet.
+    - **search_emails**: Search emails using Gmail query syntax (e.g., "from:alice subject:meeting").
+    - **read_email**: Read the full content of a specific email by message ID.
+    - **draft_email**: Create a draft email with recipient, subject, and body.
 
     GUIDELINES:
     - For inbox summaries, group by priority: urgent/action-needed first, FYI second.
     - Include sender name, subject, and a one-line summary for each email.
-    - When drafting replies, confirm the draft content before sending.
-    - If Gmail MCP tools are not available, clearly state that email features
-      are not yet configured.
+    - When drafting replies, first read the original email, then confirm the draft content.
+    - Use search_emails for targeted lookups (e.g., "from:priya", "subject:launch").
     """,
-    tools=[gmail_toolset] if gmail_toolset else [],
+    tools=[gmail_toolset],
     output_key="inbox_data",
 )
 
 
 # --- Sub-Agent 2: PlannerAgent (Google Calendar via MCP) ---
+# Tools from docs/mcp.md — Codelab 3, StdioConnectionParams with custom MCP server
 
 calendar_toolset = tools.get_calendar_mcp_toolset()
 
@@ -79,19 +76,19 @@ planner_agent = Agent(
     users manage their Google Calendar.
 
     CAPABILITIES:
-    - Check today's or this week's schedule
-    - Find meeting conflicts and double-bookings
-    - Get meeting details: attendees, location, agenda, video link
-    - Suggest available time slots for new meetings
+    - **list_events**: List today's or upcoming events (set days_ahead for range).
+    - **search_events**: Search events by keyword in title/description.
+    - **get_event**: Get full details of a specific event by ID.
+    - **create_event**: Create a new event with time, attendees, and location.
+    - **find_free_time**: Find available time slots on a specific date.
 
     GUIDELINES:
     - Always include the day of week, date, and time in responses (e.g., "Monday, April 7 at 2:00 PM").
     - Flag conflicts or back-to-back meetings proactively.
-    - When booking, confirm the time slot and attendees before creating the event.
-    - If Calendar MCP tools are not available, clearly state that calendar features
-      are not yet configured.
+    - When booking, use find_free_time first, then confirm the slot before creating.
+    - Use ISO 8601 format for times (e.g., "2026-04-07T14:00:00").
     """,
-    tools=[calendar_toolset] if calendar_toolset else [],
+    tools=[calendar_toolset],
     output_key="planner_data",
 )
 
