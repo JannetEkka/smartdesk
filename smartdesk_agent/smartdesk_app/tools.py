@@ -13,6 +13,7 @@ from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnecti
 from google.adk.tools.tool_context import ToolContext
 
 import sqlalchemy
+from datetime import date, datetime
 
 load_dotenv()
 
@@ -110,6 +111,13 @@ def _get_db_engine():
     )
 
 
+def _serialize_value(val):
+    """Convert non-JSON-serializable types to strings."""
+    if isinstance(val, (date, datetime)):
+        return val.isoformat()
+    return val
+
+
 def _query_db(sql: str, params: dict = None) -> list[dict]:
     """Execute a SQL query and return results as list of dicts."""
     engine = _get_db_engine()
@@ -117,7 +125,10 @@ def _query_db(sql: str, params: dict = None) -> list[dict]:
         with engine.connect() as conn:
             result = conn.execute(sqlalchemy.text(sql), params or {})
             columns = result.keys()
-            return [dict(zip(columns, row)) for row in result.fetchall()]
+            return [
+                {col: _serialize_value(val) for col, val in zip(columns, row)}
+                for row in result.fetchall()
+            ]
     except Exception as e:
         logging.error(f"Database query failed: {e}")
         return [{"error": str(e)}]
