@@ -54,9 +54,6 @@ inbox_agent = Agent(
 
     Use the Gmail MCP tools available to you to complete these tasks.
     Always provide concise, actionable summaries.
-
-    PROMPT:
-    { PROMPT }
     """,
     tools=[gmail_toolset] if gmail_toolset else [],
     output_key="inbox_data",
@@ -81,9 +78,6 @@ planner_agent = Agent(
 
     Use the Google Calendar MCP tools available to you.
     Always mention specific times and dates clearly.
-
-    PROMPT:
-    { PROMPT }
     """,
     tools=[calendar_toolset] if calendar_toolset else [],
     output_key="planner_data",
@@ -107,9 +101,6 @@ data_agent = Agent(
     - Add new notes and tasks
 
     Use the database tools available to you.
-
-    PROMPT:
-    { PROMPT }
     """,
     tools=[
         tools.search_notes,
@@ -133,10 +124,10 @@ response_formatter = Agent(
     You are the friendly voice of SmartDesk. Your task is to take the gathered data
     and present it to the user in a complete and helpful answer.
 
-    Available data (use whichever is present):
-    - INBOX_DATA: { inbox_data }
-    - PLANNER_DATA: { planner_data }
-    - KNOWLEDGE_DATA: { knowledge_data }
+    Available data from other agents (use whichever is present in the conversation):
+    - Email data from inbox_agent
+    - Calendar data from planner_agent
+    - Knowledge base data from data_agent
 
     Guidelines:
     - Be concise but thorough
