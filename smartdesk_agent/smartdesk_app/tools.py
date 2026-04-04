@@ -190,7 +190,7 @@ def add_task(
     title: str,
     description: str = "",
     priority: str = "medium",
-    due_date: str = None,
+    due_date: str = "",
 ) -> dict:
     """Add a new task to the task list."""
     sql = """
@@ -202,7 +202,7 @@ def add_task(
         "title": title,
         "description": description,
         "priority": priority,
-        "due_date": due_date,
+        "due_date": due_date if due_date else None,
     })
     logging.info(f"[add_task] Created task: {title}")
     return results[0] if results else {"error": "Failed to create task"}
