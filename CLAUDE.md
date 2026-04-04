@@ -103,7 +103,10 @@ Follow the AlloyDB Quick Setup codelab exactly:
 - Instance name: `smartdesk-instance`
 - Password: set and save it
 - Region: `us-central1`
+- Enable **Public IP** connectivity and add `0.0.0.0/0` to Authorized External Networks (for Cloud Shell testing only)
 - Wait for READY status on both cluster and instance
+
+> **IMPORTANT:** Remove `0.0.0.0/0` from Authorized External Networks and disable Public IP after testing is complete. For Cloud Run deployment, use the private IP with VPC egress instead.
 
 **Step 3b: Enable Extensions (docs/alloydb.md — Codelab 3, "Task 1")**
 
