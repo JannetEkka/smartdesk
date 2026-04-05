@@ -34,11 +34,15 @@ SCOPES = [
 ]
 
 
-def get_credentials() -> Credentials:
-    """Get valid OAuth 2.0 credentials, running the auth flow if needed.
+def get_credentials(allow_interactive: bool = False) -> Credentials:
+    """Get valid OAuth 2.0 credentials.
 
-    First run: opens a browser for consent, saves token.json.
-    Subsequent runs: loads and refreshes the saved token.
+    If token.json exists: loads and refreshes it.
+    If not and allow_interactive=True: runs browser consent flow.
+    If not and allow_interactive=False: raises with instructions.
+
+    Use allow_interactive=True only from authenticate.py (run manually).
+    MCP servers call with default (False) so they never block on browser.
     """
     creds = None
 
@@ -46,17 +50,20 @@ def get_credentials() -> Credentials:
     if _TOKEN_FILE.exists():
         creds = Credentials.from_authorized_user_file(str(_TOKEN_FILE), SCOPES)
 
-    # If no valid creds, run the OAuth flow
+    # If no valid creds, refresh or run the OAuth flow
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             logger.info("Refreshing expired OAuth token...")
             creds.refresh(Request())
-        else:
+            # Save refreshed token
+            with open(_TOKEN_FILE, "w") as f:
+                f.write(creds.to_json())
+        elif allow_interactive:
             if not _CLIENT_SECRET.exists():
                 raise FileNotFoundError(
                     f"OAuth client secret not found at {_CLIENT_SECRET}. "
-                    "Download it from Cloud Console → APIs & Services → Credentials → "
-                    "OAuth 2.0 Client IDs → Download JSON, and save as client_secret.json "
+                    "Download it from Cloud Console -> APIs & Services -> Credentials -> "
+                    "OAuth 2.0 Client IDs -> Download JSON, and save as client_secret.json "
                     "in the smartdesk_app/ directory."
                 )
             logger.info("Running OAuth consent flow (will open browser)...")
@@ -64,10 +71,14 @@ def get_credentials() -> Credentials:
                 str(_CLIENT_SECRET), SCOPES
             )
             creds = flow.run_local_server(port=0)
-
-        # Save for next run
-        with open(_TOKEN_FILE, "w") as f:
-            f.write(creds.to_json())
-        logger.info(f"OAuth token saved to {_TOKEN_FILE}")
+            # Save for next run
+            with open(_TOKEN_FILE, "w") as f:
+                f.write(creds.to_json())
+            logger.info(f"OAuth token saved to {_TOKEN_FILE}")
+        else:
+            raise FileNotFoundError(
+                f"No OAuth token found at {_TOKEN_FILE}. "
+                "Run this first:  python smartdesk_agent/smartdesk_app/authenticate.py"
+            )
 
     return creds
