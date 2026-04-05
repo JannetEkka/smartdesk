@@ -14,13 +14,15 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-import google.auth
-import google.auth.transport.requests
 from googleapiclient.discovery import build
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
+
+# Add parent to path so we can import the shared auth module
+sys.path.insert(0, os.path.dirname(__file__))
+from auth import get_credentials
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("calendar_mcp_server")
@@ -29,15 +31,9 @@ app = Server("calendar-mcp-server")
 
 
 def _get_calendar_service():
-    """Build Calendar API service using application default credentials."""
-    credentials, _ = google.auth.default(
-        scopes=[
-            "https://www.googleapis.com/auth/calendar.readonly",
-            "https://www.googleapis.com/auth/calendar.events",
-        ]
-    )
-    credentials.refresh(google.auth.transport.requests.Request())
-    return build("calendar", "v3", credentials=credentials)
+    """Build Calendar API service using Desktop OAuth credentials."""
+    creds = get_credentials()
+    return build("calendar", "v3", credentials=creds)
 
 
 @app.list_tools()

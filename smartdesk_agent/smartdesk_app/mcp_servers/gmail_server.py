@@ -15,13 +15,15 @@ import os
 import sys
 from email.mime.text import MIMEText
 
-import google.auth
-import google.auth.transport.requests
 from googleapiclient.discovery import build
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
+
+# Add parent to path so we can import the shared auth module
+sys.path.insert(0, os.path.dirname(__file__))
+from auth import get_credentials
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("gmail_mcp_server")
@@ -30,15 +32,9 @@ app = Server("gmail-mcp-server")
 
 
 def _get_gmail_service():
-    """Build Gmail API service using application default credentials."""
-    credentials, _ = google.auth.default(
-        scopes=[
-            "https://www.googleapis.com/auth/gmail.readonly",
-            "https://www.googleapis.com/auth/gmail.compose",
-        ]
-    )
-    credentials.refresh(google.auth.transport.requests.Request())
-    return build("gmail", "v1", credentials=credentials)
+    """Build Gmail API service using Desktop OAuth credentials."""
+    creds = get_credentials()
+    return build("gmail", "v1", credentials=creds)
 
 
 @app.list_tools()
