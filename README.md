@@ -39,6 +39,11 @@ smartdesk/
 │       ├── __init__.py        # from . import agent
 │       ├── agent.py           # Agent definitions (root_agent entry point)
 │       ├── tools.py           # MCP toolsets + AlloyDB query functions
+│       ├── authenticate.py    # CLI script for pre-auth setup
+│       ├── mcp_servers/
+│       │   ├── auth.py        # Shared OAuth 2.0 helper
+│       │   ├── gmail_server.py    # Gmail MCP server (stdio)
+│       │   └── calendar_server.py # Calendar MCP server (stdio)
 │       └── .env               # Environment config (not committed)
 ├── setup/
 │   ├── setup_env.sh           # Environment setup script
@@ -102,6 +107,47 @@ adk deploy cloud_run \
   -- \
   --service-account=$SERVICE_ACCOUNT
 ```
+
+## Authentication
+
+SmartDesk uses **per-user Google OAuth**. Each user signs in with their own Google account through the chat — you will only see your own emails and calendar events.
+
+**How it works:**
+1. Ask the agent anything about email or calendar (e.g., "show my inbox")
+2. The agent will provide a Google sign-in link
+3. Open the link, sign in with your Google account, and approve access
+4. You'll land on a page that won't load — that's expected
+5. Copy the full URL from your browser's address bar and paste it back in the chat
+6. You're in! The agent now has access to your Gmail and Calendar
+
+**Privacy:** No one else's data is accessible. Your OAuth token is session-scoped and only used for the duration of your interaction.
+
+> **Note for judges/testers:** Your Google account email must be added to the OAuth consent screen's test user list before you can sign in. Please share your email with the developer so it can be added.
+
+## Sample Test Prompts
+
+These prompts demonstrate SmartDesk's capabilities across all three tracks:
+
+**Email (Track 2 — Gmail MCP):**
+- "Show me my latest emails"
+- "Search for emails from [colleague name]"
+- "Draft an email to test@example.com about the project update"
+
+**Calendar (Track 2 — Calendar MCP):**
+- "What's on my schedule today?"
+- "Find free time slots for tomorrow"
+- "Create a meeting called 'Team Sync' tomorrow at 2pm to 3pm"
+
+**Knowledge Base (Track 3 — AlloyDB with vector search):**
+- "What are my pending tasks?"
+- "Search my notes about product launch"
+- "Add a task: Review Q2 budget with high priority, due 2026-04-10"
+- "Look up contact info for Priya"
+- "Mark task 3 as done"
+
+**Multi-domain:**
+- "Prepare me for my next meeting" (calendar + notes)
+- "What's on my plate today?" (tasks + calendar)
 
 ## Documentation
 
