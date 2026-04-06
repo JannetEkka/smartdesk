@@ -17,6 +17,9 @@ import json
 import logging
 from pathlib import Path
 
+# Allow http://localhost for OAuth redirect (required for Desktop app flow in Cloud Shell)
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
