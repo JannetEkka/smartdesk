@@ -3,10 +3,13 @@
 Uses the Desktop OAuth flow with client_secret.json, which avoids the
 "This app is blocked" error that happens with gcloud's default OAuth client.
 
+Cloud Shell compatible: uses manual copy-paste flow (no local server needed).
+
 Setup:
 1. Create OAuth consent screen (External, Testing mode) in Cloud Console
-2. Create OAuth client ID (Desktop app) → download JSON
+2. Create OAuth client ID (Desktop app) -> download JSON
 3. Save as smartdesk_agent/smartdesk_app/client_secret.json
+4. Run: python smartdesk_agent/smartdesk_app/authenticate.py
 """
 
 import os
@@ -16,7 +19,7 @@ from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +41,11 @@ def get_credentials(allow_interactive: bool = False) -> Credentials:
     """Get valid OAuth 2.0 credentials.
 
     If token.json exists: loads and refreshes it.
-    If not and allow_interactive=True: runs browser consent flow.
+    If not and allow_interactive=True: runs manual copy-paste consent flow.
     If not and allow_interactive=False: raises with instructions.
 
     Use allow_interactive=True only from authenticate.py (run manually).
-    MCP servers call with default (False) so they never block on browser.
+    MCP servers call with default (False) so they never block on input.
     """
     creds = None
 
@@ -66,11 +69,30 @@ def get_credentials(allow_interactive: bool = False) -> Credentials:
                     "OAuth 2.0 Client IDs -> Download JSON, and save as client_secret.json "
                     "in the smartdesk_app/ directory."
                 )
-            logger.info("Running OAuth consent flow (will open browser)...")
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(_CLIENT_SECRET), SCOPES
+            # Manual copy-paste flow (works in Cloud Shell where localhost isn't reachable)
+            flow = Flow.from_client_secrets_file(
+                str(_CLIENT_SECRET),
+                scopes=SCOPES,
+                redirect_uri="http://localhost",
             )
-            creds = flow.run_local_server(port=0)
+            auth_url, _ = flow.authorization_url(
+                access_type="offline",
+                prompt="consent",
+            )
+            print()
+            print("=" * 60)
+            print("Open this URL in your browser:")
+            print()
+            print(auth_url)
+            print()
+            print("After approving, you'll be redirected to a page")
+            print("that WON'T LOAD. That's expected!")
+            print("Copy the FULL URL from your browser's address bar.")
+            print("=" * 60)
+            print()
+            redirect_url = input("Paste the full redirect URL here: ").strip()
+            flow.fetch_token(authorization_response=redirect_url)
+            creds = flow.credentials
             # Save for next run
             with open(_TOKEN_FILE, "w") as f:
                 f.write(creds.to_json())
