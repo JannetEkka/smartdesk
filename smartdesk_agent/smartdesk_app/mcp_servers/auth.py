@@ -54,12 +54,6 @@ def generate_auth_url() -> dict:
     return {
         "auth_url": auth_url,
         "state": state,
-        "instructions": (
-            "Open the URL above in your browser. Sign in with your Google account "
-            "and approve access. You'll be redirected to a page that won't load — "
-            "that's expected. Copy the FULL URL from your browser's address bar "
-            "and paste it back here."
-        ),
     }
 
 
