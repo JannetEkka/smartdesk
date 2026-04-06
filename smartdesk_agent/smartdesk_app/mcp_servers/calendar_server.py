@@ -30,10 +30,16 @@ logger = logging.getLogger("calendar_mcp_server")
 app = Server("calendar-mcp-server")
 
 
+_calendar_service = None
+
+
 def _get_calendar_service():
-    """Build Calendar API service using Desktop OAuth credentials."""
-    creds = get_credentials()
-    return build("calendar", "v3", credentials=creds)
+    """Build or return cached Calendar API service."""
+    global _calendar_service
+    if _calendar_service is None:
+        creds = get_credentials()
+        _calendar_service = build("calendar", "v3", credentials=creds)
+    return _calendar_service
 
 
 @app.list_tools()

@@ -31,10 +31,16 @@ logger = logging.getLogger("gmail_mcp_server")
 app = Server("gmail-mcp-server")
 
 
+_gmail_service = None
+
+
 def _get_gmail_service():
-    """Build Gmail API service using Desktop OAuth credentials."""
-    creds = get_credentials()
-    return build("gmail", "v1", credentials=creds)
+    """Build or return cached Gmail API service."""
+    global _gmail_service
+    if _gmail_service is None:
+        creds = get_credentials()
+        _gmail_service = build("gmail", "v1", credentials=creds)
+    return _gmail_service
 
 
 @app.list_tools()

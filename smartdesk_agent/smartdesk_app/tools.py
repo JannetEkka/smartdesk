@@ -39,7 +39,7 @@ def get_gmail_mcp_toolset():
                 command=sys.executable,
                 args=[_GMAIL_SERVER],
             ),
-            timeout=15,
+            timeout=60,
         ),
     )
     logging.info("Gmail MCP Toolset configured (stdio).")
@@ -55,7 +55,7 @@ def get_calendar_mcp_toolset():
                 command=sys.executable,
                 args=[_CALENDAR_SERVER],
             ),
-            timeout=15,
+            timeout=60,
         ),
     )
     logging.info("Calendar MCP Toolset configured (stdio).")
