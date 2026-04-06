@@ -1,15 +1,9 @@
 """Shared OAuth 2.0 helper for Gmail and Calendar MCP servers.
 
-Uses the Desktop OAuth flow with client_secret.json, which avoids the
-"This app is blocked" error that happens with gcloud's default OAuth client.
+Supports per-user login: any user can authenticate through the agent chat
+by calling login_google (gets URL) → complete_google_login (pastes redirect URL).
 
-Cloud Shell compatible: uses manual copy-paste flow (no local server needed).
-
-Setup:
-1. Create OAuth consent screen (External, Testing mode) in Cloud Console
-2. Create OAuth client ID (Desktop app) -> download JSON
-3. Save as smartdesk_agent/smartdesk_app/client_secret.json
-4. Run: python smartdesk_agent/smartdesk_app/authenticate.py
+Cloud Shell & Cloud Run compatible: uses manual copy-paste flow.
 """
 
 import os
@@ -17,7 +11,7 @@ import json
 import logging
 from pathlib import Path
 
-# Allow http://localhost for OAuth redirect (required for Desktop app flow in Cloud Shell)
+# Allow http://localhost for OAuth redirect (Desktop app flow)
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 from google.auth.transport.requests import Request
@@ -40,39 +34,109 @@ SCOPES = [
 ]
 
 
+def generate_auth_url() -> dict:
+    """Generate an OAuth URL for user login. Called by login_google agent tool."""
+    if not _CLIENT_SECRET.exists():
+        return {
+            "error": "OAuth not configured. client_secret.json is missing. "
+            "Ask the admin to set up OAuth credentials in Cloud Console."
+        }
+
+    flow = Flow.from_client_secrets_file(
+        str(_CLIENT_SECRET),
+        scopes=SCOPES,
+        redirect_uri="http://localhost",
+    )
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        prompt="consent",
+    )
+    return {
+        "auth_url": auth_url,
+        "state": state,
+        "instructions": (
+            "Open the URL above in your browser. Sign in with your Google account "
+            "and approve access. You'll be redirected to a page that won't load — "
+            "that's expected. Copy the FULL URL from your browser's address bar "
+            "and paste it back here."
+        ),
+    }
+
+
+def exchange_auth_code(redirect_url: str) -> dict:
+    """Exchange the OAuth redirect URL for credentials. Called by complete_google_login."""
+    if not _CLIENT_SECRET.exists():
+        return {"error": "client_secret.json is missing."}
+
+    try:
+        flow = Flow.from_client_secrets_file(
+            str(_CLIENT_SECRET),
+            scopes=SCOPES,
+            redirect_uri="http://localhost",
+        )
+        flow.fetch_token(authorization_response=redirect_url)
+        creds = flow.credentials
+
+        # Save token (overwrites any previous user's token)
+        with open(_TOKEN_FILE, "w") as f:
+            f.write(creds.to_json())
+
+        # Get the user's email for confirmation
+        from googleapiclient.discovery import build
+        service = build("oauth2", "v2", credentials=creds)
+        user_info = service.userinfo().get().execute()
+        email = user_info.get("email", "unknown")
+
+        logger.info(f"New user authenticated: {email}")
+        return {
+            "status": "success",
+            "email": email,
+            "message": f"Logged in as {email}. You can now use Gmail and Calendar features.",
+        }
+    except Exception as e:
+        logger.error(f"Auth exchange failed: {e}")
+        return {"error": f"Login failed: {str(e)}"}
+
+
+def is_logged_in() -> dict:
+    """Check if a user is currently logged in."""
+    if not _TOKEN_FILE.exists():
+        return {"logged_in": False, "message": "No one is logged in yet."}
+
+    try:
+        creds = Credentials.from_authorized_user_file(str(_TOKEN_FILE), SCOPES)
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                with open(_TOKEN_FILE, "w") as f:
+                    f.write(creds.to_json())
+            else:
+                return {"logged_in": False, "message": "Session expired. Please log in again."}
+
+        return {"logged_in": True}
+    except Exception:
+        return {"logged_in": False, "message": "Session invalid. Please log in again."}
+
+
 def get_credentials(allow_interactive: bool = False) -> Credentials:
-    """Get valid OAuth 2.0 credentials.
+    """Get valid OAuth 2.0 credentials from saved token.
 
-    If token.json exists: loads and refreshes it.
-    If not and allow_interactive=True: runs manual copy-paste consent flow.
-    If not and allow_interactive=False: raises with instructions.
-
-    Use allow_interactive=True only from authenticate.py (run manually).
-    MCP servers call with default (False) so they never block on input.
+    MCP servers call this to get the current user's credentials.
+    If no token exists, raises with a clear message.
     """
     creds = None
 
-    # Load saved token if it exists
     if _TOKEN_FILE.exists():
         creds = Credentials.from_authorized_user_file(str(_TOKEN_FILE), SCOPES)
 
-    # If no valid creds, refresh or run the OAuth flow
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             logger.info("Refreshing expired OAuth token...")
             creds.refresh(Request())
-            # Save refreshed token
             with open(_TOKEN_FILE, "w") as f:
                 f.write(creds.to_json())
         elif allow_interactive:
-            if not _CLIENT_SECRET.exists():
-                raise FileNotFoundError(
-                    f"OAuth client secret not found at {_CLIENT_SECRET}. "
-                    "Download it from Cloud Console -> APIs & Services -> Credentials -> "
-                    "OAuth 2.0 Client IDs -> Download JSON, and save as client_secret.json "
-                    "in the smartdesk_app/ directory."
-                )
-            # Manual copy-paste flow (works in Cloud Shell where localhost isn't reachable)
+            # Only used by authenticate.py (CLI)
             flow = Flow.from_client_secrets_file(
                 str(_CLIENT_SECRET),
                 scopes=SCOPES,
@@ -88,22 +152,17 @@ def get_credentials(allow_interactive: bool = False) -> Credentials:
             print()
             print(auth_url)
             print()
-            print("After approving, you'll be redirected to a page")
-            print("that WON'T LOAD. That's expected!")
-            print("Copy the FULL URL from your browser's address bar.")
+            print("After approving, copy the FULL URL from the browser address bar.")
             print("=" * 60)
             print()
             redirect_url = input("Paste the full redirect URL here: ").strip()
             flow.fetch_token(authorization_response=redirect_url)
             creds = flow.credentials
-            # Save for next run
             with open(_TOKEN_FILE, "w") as f:
                 f.write(creds.to_json())
-            logger.info(f"OAuth token saved to {_TOKEN_FILE}")
         else:
             raise FileNotFoundError(
-                f"No OAuth token found at {_TOKEN_FILE}. "
-                "Run this first:  python smartdesk_agent/smartdesk_app/authenticate.py"
+                "Not logged in. Please type 'log in' to authenticate with your Google account."
             )
 
     return creds

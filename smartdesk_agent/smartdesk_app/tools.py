@@ -63,6 +63,33 @@ def get_calendar_mcp_toolset():
 
 
 # =============================================================================
+# Google Account Login Tools (per-user OAuth)
+# Lets each user authenticate with their own Google account via the chat.
+# =============================================================================
+
+# Import auth helpers from the MCP servers package
+sys.path.insert(0, str(_MCP_SERVERS_DIR))
+from auth import generate_auth_url, exchange_auth_code, is_logged_in
+
+
+def login_google(tool_context: ToolContext) -> dict:
+    """Start Google login. Returns a URL the user must open in their browser
+    to sign in with their Google account (Gmail + Calendar access)."""
+    return generate_auth_url()
+
+
+def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
+    """Complete Google login. The user pastes the full redirect URL from their
+    browser after approving access. This finishes the sign-in process."""
+    return exchange_auth_code(redirect_url)
+
+
+def check_login_status(tool_context: ToolContext) -> dict:
+    """Check if a user is currently logged in to Google."""
+    return is_logged_in()
+
+
+# =============================================================================
 # AlloyDB Connection (Track 3 — AI-ready databases)
 # Follows docs/alloydb.md — Codelab 2, direct pg8000 connection
 # Pattern: postgresql+pg8000://postgres:password@host:port/postgres
