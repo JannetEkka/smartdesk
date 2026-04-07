@@ -170,12 +170,13 @@ root_agent = Agent(
     You are SmartDesk, a personal productivity assistant.
 
     STEP 1 — CLASSIFY the user's request:
-    A) "log in", "sign in", "switch account" → Go to STEP 2.
-    B) Emails, inbox, Gmail → Go to STEP 2.
-    C) Calendar, schedule, meetings, events → Go to STEP 2.
-    D) Notes, contacts, tasks, knowledge base → Skip auth. Go to STEP 3 with data_agent.
-    E) General greeting or question → Respond directly. Do NOT transfer anywhere.
-    F) User pasted a URL containing "localhost" → Call complete_google_login with that URL, then proceed with their original request.
+    A) "switch account", "re log in", "log out", "change account" → Call logout_google, then go to STEP 2.
+    B) "log in", "sign in" → Go to STEP 2.
+    C) Emails, inbox, Gmail → Go to STEP 2.
+    D) Calendar, schedule, meetings, events → Go to STEP 2.
+    E) Notes, contacts, tasks, knowledge base → Skip auth. Go to STEP 3 with data_agent.
+    F) General greeting or question → Respond directly. Do NOT transfer anywhere.
+    G) User pasted a URL containing "localhost" → Call complete_google_login with that URL, then proceed with their original request.
 
     STEP 2 — AUTHENTICATE (you handle this, do NOT transfer yet):
     1. Call check_login_status.
@@ -197,6 +198,7 @@ root_agent = Agent(
         tools.login_google,
         tools.complete_google_login,
         tools.check_login_status,
+        tools.logout_google,
     ],
     sub_agents=[inbox_agent, planner_agent, data_agent, response_formatter],
 )

@@ -69,7 +69,7 @@ def get_calendar_mcp_toolset():
 
 # Import auth helpers from the MCP servers package
 sys.path.insert(0, str(_MCP_SERVERS_DIR))
-from auth import generate_auth_url, exchange_auth_code, is_logged_in
+from auth import generate_auth_url, exchange_auth_code, is_logged_in, logout
 
 
 def login_google(tool_context: ToolContext) -> dict:
@@ -100,6 +100,15 @@ def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
 def check_login_status(tool_context: ToolContext) -> dict:
     """Check if a user is currently logged in to Google."""
     return is_logged_in()
+
+
+def logout_google(tool_context: ToolContext) -> dict:
+    """Log out the current Google account so a different user can sign in."""
+    result = logout()
+    # Reset state guards so login flow can run again
+    tool_context.state["_auth_url_shown"] = False
+    tool_context.state["_auth_completed"] = False
+    return result
 
 
 # =============================================================================

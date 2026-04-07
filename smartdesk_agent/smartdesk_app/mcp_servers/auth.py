@@ -105,6 +105,15 @@ def is_logged_in() -> dict:
         return {"logged_in": False, "message": "Session invalid. Please log in again."}
 
 
+def logout() -> dict:
+    """Log out the current user by deleting the saved token."""
+    if _TOKEN_FILE.exists():
+        _TOKEN_FILE.unlink()
+        logger.info("User logged out, token deleted.")
+        return {"status": "success", "message": "Logged out. You can now log in with a different account."}
+    return {"status": "success", "message": "No one was logged in."}
+
+
 def get_credentials(allow_interactive: bool = False) -> Credentials:
     """Get valid OAuth 2.0 credentials from saved token.
 
