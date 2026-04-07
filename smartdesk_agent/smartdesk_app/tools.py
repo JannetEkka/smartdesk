@@ -72,37 +72,27 @@ sys.path.insert(0, str(_MCP_SERVERS_DIR))
 from auth import generate_auth_url, exchange_auth_code, is_logged_in, logout
 
 
-_last_auth_url = None  # Module-level guard against repeated calls
-
-
 def login_google(tool_context: ToolContext) -> dict:
-    """Start Google login. Returns a display_message to show the user. Just
-    echo the display_message exactly — do not add, modify, or repeat it."""
-    global _last_auth_url
-    if _last_auth_url:
-        return {"status": "already_shown", "display_message": ""}
+    """Start Google login. Returns an auth_url for the user to visit."""
+    if tool_context.state.get("_auth_url_shown"):
+        return {"status": "already_shown", "auth_url": ""}
     result = generate_auth_url()
+    if "error" in result:
+        return result
     url = result.get("auth_url", "")
-    _last_auth_url = url
     tool_context.state["_auth_url_shown"] = True
-    return {
-        "status": "success",
-        "display_message": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
-    }
+    return {"status": "success", "auth_url": url}
 
 
 def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
     """Complete Google login. The user pastes the full redirect URL from their
     browser after approving access. This finishes the sign-in process."""
-    # Prevent calling this multiple times with the same URL
     if tool_context.state.get("_auth_completed"):
         return {"status": "already_completed", "message": "Login was already completed. You can now use Gmail and Calendar features."}
     result = exchange_auth_code(redirect_url)
-    global _last_auth_url
     if result.get("status") == "success":
         tool_context.state["_auth_completed"] = True
         tool_context.state["_auth_url_shown"] = False
-        _last_auth_url = None  # Reset so user can switch again later
     return result
 
 
@@ -112,21 +102,17 @@ def check_login_status(tool_context: ToolContext) -> dict:
 
 
 def switch_account(tool_context: ToolContext) -> dict:
-    """Switch Google account: logs out and returns a new sign-in URL.
-    Returns a display_message — just echo it exactly, do not repeat."""
-    global _last_auth_url
-    if _last_auth_url:
-        return {"status": "already_shown", "display_message": ""}
+    """Switch Google account: logs out and returns a new sign-in URL."""
+    if tool_context.state.get("_auth_url_shown"):
+        return {"status": "already_shown", "auth_url": ""}
     logout()
     result = generate_auth_url()
+    if "error" in result:
+        return result
     url = result.get("auth_url", "")
-    _last_auth_url = url
     tool_context.state["_auth_url_shown"] = True
     tool_context.state["_auth_completed"] = False
-    return {
-        "status": "success",
-        "display_message": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
-    }
+    return {"status": "success", "auth_url": url}
 
 
 # =============================================================================
