@@ -72,13 +72,17 @@ sys.path.insert(0, str(_MCP_SERVERS_DIR))
 from auth import generate_auth_url, exchange_auth_code, is_logged_in, logout
 
 
+_last_auth_url = None  # Module-level guard against repeated calls
+
+
 def login_google(tool_context: ToolContext) -> dict:
     """Start Google login. Returns a URL the user must open in their browser
     to sign in with their Google account (Gmail + Calendar access)."""
-    # Prevent the model from calling this multiple times in one session
-    if tool_context.state.get("_auth_url_shown"):
-        return {"status": "already_shown", "message": "Auth URL was already shown to the user. STOP and wait for the user to paste the redirect URL. Do NOT call this tool again."}
+    global _last_auth_url
+    if _last_auth_url:
+        return {"status": "already_shown", "auth_url": _last_auth_url, "message": "Auth URL was already shown. STOP and wait for the user to paste the redirect URL."}
     result = generate_auth_url()
+    _last_auth_url = result.get("auth_url")
     tool_context.state["_auth_url_shown"] = True
     return result
 
@@ -90,10 +94,11 @@ def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
     if tool_context.state.get("_auth_completed"):
         return {"status": "already_completed", "message": "Login was already completed. You can now use Gmail and Calendar features."}
     result = exchange_auth_code(redirect_url)
+    global _last_auth_url
     if result.get("status") == "success":
         tool_context.state["_auth_completed"] = True
         tool_context.state["_auth_url_shown"] = False
-        tool_context.state["_logged_out"] = False
+        _last_auth_url = None  # Reset so user can switch again later
     return result
 
 
@@ -105,8 +110,12 @@ def check_login_status(tool_context: ToolContext) -> dict:
 def switch_account(tool_context: ToolContext) -> dict:
     """Switch Google account: logs out the current user and returns a new
     sign-in URL. Use this when the user wants to relogin or change accounts."""
+    global _last_auth_url
+    if _last_auth_url:
+        return {"status": "already_shown", "auth_url": _last_auth_url, "message": "Auth URL was already shown. STOP and wait for the user to paste the redirect URL."}
     logout()
     result = generate_auth_url()
+    _last_auth_url = result.get("auth_url")
     tool_context.state["_auth_url_shown"] = True
     tool_context.state["_auth_completed"] = False
     return result
