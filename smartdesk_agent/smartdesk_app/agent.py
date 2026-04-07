@@ -3,7 +3,6 @@
 # Structure: root_agent → sub-agents with output_key → SequentialAgent formatter
 
 import os
-import re
 import logging
 import warnings
 from dotenv import load_dotenv
@@ -169,45 +168,28 @@ response_formatter = Agent(
 )
 
 
-# --- Callback: strip auth URL text from model responses that also contain function calls ---
-# The model generates text "Please sign in: URL" AND a function_call in the SAME response.
-# Then after the tool runs, the second LLM call generates the URL again.
-# This callback strips auth URL text from responses that contain function_calls,
-# so only the clean summarization response (second call) shows the URL.
+# --- Callback: inject auth URL directly, bypassing model generation entirely ---
+# The model NEVER sees the auth URL. The tool stores it in state, and this
+# before_model_callback intercepts the next model call to inject the URL text
+# as a canned response. Zero chance of duplication.
 
-_AUTH_URL_PATTERN = re.compile(
-    r"Please sign in[:\s]*https?://accounts\.google\.com\S*", re.IGNORECASE
-)
-
-
-def _dedup_auth_url(callback_context: CallbackContext, llm_response: LlmResponse):
-    """After-model callback. Two cases:
-    1) Response has function_calls + text with auth URL → strip the text (URL will
-       appear in the summarization call instead).
-    2) Response has only text with auth URL repeated → keep first, strip rest.
-    """
-    if not llm_response.content or not llm_response.content.parts:
-        return None
-
-    has_function_call = any(
-        part.function_call for part in llm_response.content.parts
-    )
-
-    if has_function_call:
-        # Case 1: strip auth URL text from mixed text+function_call responses
-        for part in llm_response.content.parts:
-            if part.text and _AUTH_URL_PATTERN.search(part.text):
-                part.text = ""
-    else:
-        # Case 2: pure text response — deduplicate repeated URLs
-        for part in llm_response.content.parts:
-            if not part.text:
-                continue
-            matches = list(_AUTH_URL_PATTERN.finditer(part.text))
-            if len(matches) > 1:
-                # Keep only text up to end of first match + any trailing instruction
-                part.text = part.text[:matches[1].start()].rstrip()
-    return None
+def _inject_auth_url(callback_context: CallbackContext, llm_request):
+    """Before-model callback: if an auth URL is pending in state, return it
+    directly as a canned response instead of calling the model."""
+    url = callback_context.state.get("_pending_auth_url")
+    if url:
+        # Clear so this only fires once
+        callback_context.state["_pending_auth_url"] = None
+        return LlmResponse(
+            content=types.Content(
+                role="model",
+                parts=[types.Part(text=(
+                    f"Please sign in: {url} "
+                    "— after approving, copy the full URL from your browser and paste it here."
+                ))],
+            )
+        )
+    return None  # No pending URL — proceed with normal model call
 
 
 # --- Root Agent (Orchestrator) ---
@@ -221,16 +203,8 @@ root_agent = Agent(
     instruction="""
     You are SmartDesk, a personal productivity assistant.
 
-    CRITICAL RULES:
-    - NEVER call switch_account or login_google more than once per turn. Call it exactly once.
-    - NEVER generate any text before calling switch_account or login_google.
-    - When you receive an auth_url from a tool, respond with EXACTLY this template and nothing else:
-      "Please sign in: <URL> — after approving, copy the full URL from your browser and paste it here."
-      Replace <URL> with the auth_url value. Do NOT add any other text before or after.
-    - If a tool returns status "duplicate" or auth_url is null, say: "Sign-in link was already provided above."
-
     STEP 1 — CLASSIFY the user's request:
-    A) "switch account", "relogin", "re log in", "log out", "change account" → Call switch_account ONCE. Follow the auth_url rules above.
+    A) "switch account", "relogin", "re log in", "log out", "change account" → Call switch_account ONCE.
     B) "log in", "sign in" → Go to STEP 2.
     C) Emails, inbox, Gmail → Go to STEP 2.
     D) Calendar, schedule, meetings, events → Go to STEP 2.
@@ -241,8 +215,8 @@ root_agent = Agent(
     STEP 2 — AUTHENTICATE (you handle this, do NOT transfer yet):
     1. Call check_login_status.
     2. If logged_in is true → Go to STEP 3.
-    3. If logged_in is false → Call login_google ONCE. Follow the auth_url rules above.
-    4. STOP. Do NOT call any more tools. Do NOT transfer to any agent. Wait for the user.
+    3. If logged_in is false → Call login_google ONCE.
+    4. After login_google or switch_account returns, STOP. Wait for the user.
 
     STEP 3 — ROUTE (only after auth is confirmed for email/calendar):
     1. Call add_prompt_to_state with the user's request.
@@ -260,5 +234,5 @@ root_agent = Agent(
         tools.switch_account,
     ],
     sub_agents=[inbox_agent, planner_agent, data_agent, response_formatter],
-    after_model_callback=_dedup_auth_url,
+    before_model_callback=_inject_auth_url,
 )
