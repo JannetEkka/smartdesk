@@ -170,7 +170,7 @@ root_agent = Agent(
     You are SmartDesk, a personal productivity assistant.
 
     STEP 1 — CLASSIFY the user's request:
-    A) "switch account", "relogin", "re log in", "log out", "change account", "lets relogin" → Call logout_google ONCE, then go to STEP 2.
+    A) "switch account", "relogin", "re log in", "log out", "change account", "lets relogin" → Call switch_account ONCE. It logs out AND returns a new auth_url. Show the URL and STOP.
     B) "log in", "sign in" → Go to STEP 2.
     C) Emails, inbox, Gmail → Go to STEP 2.
     D) Calendar, schedule, meetings, events → Go to STEP 2.
@@ -198,7 +198,7 @@ root_agent = Agent(
         tools.login_google,
         tools.complete_google_login,
         tools.check_login_status,
-        tools.logout_google,
+        tools.switch_account,
     ],
     sub_agents=[inbox_agent, planner_agent, data_agent, response_formatter],
 )

@@ -102,15 +102,13 @@ def check_login_status(tool_context: ToolContext) -> dict:
     return is_logged_in()
 
 
-def logout_google(tool_context: ToolContext) -> dict:
-    """Log out the current Google account so a different user can sign in."""
-    if tool_context.state.get("_logged_out"):
-        return {"status": "already_logged_out", "message": "Already logged out. Now call login_google to get a new sign-in URL."}
-    result = logout()
-    # Reset state guards so login flow can run again
-    tool_context.state["_auth_url_shown"] = False
+def switch_account(tool_context: ToolContext) -> dict:
+    """Switch Google account: logs out the current user and returns a new
+    sign-in URL. Use this when the user wants to relogin or change accounts."""
+    logout()
+    result = generate_auth_url()
+    tool_context.state["_auth_url_shown"] = True
     tool_context.state["_auth_completed"] = False
-    tool_context.state["_logged_out"] = True
     return result
 
 
