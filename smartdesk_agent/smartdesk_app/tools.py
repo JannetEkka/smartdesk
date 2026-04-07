@@ -76,21 +76,28 @@ def get_calendar_mcp_toolset():
 sys.path.insert(0, str(_MCP_SERVERS_DIR))
 from auth import generate_auth_url, exchange_auth_code, is_logged_in, logout
 
+import threading
+
+_auth_lock = threading.Lock()
+_auth_url_pending = False  # Guards against parallel tool calls in same LLM turn
+
 
 def login_google(tool_context: ToolContext) -> dict:
-    """Start Google login. Returns a sign-in URL for the user."""
-    if tool_context.state.get("_auth_url_shown"):
-        return {"status": "already_shown"}
+    """Start Google login. Returns a sign-in URL for the user.
+    IMPORTANT: The agent must respond with ONLY the sign-in message, once."""
+    global _auth_url_pending
+    with _auth_lock:
+        if _auth_url_pending or tool_context.state.get("_auth_url_shown"):
+            return {"status": "duplicate", "auth_url": None}
+        _auth_url_pending = True
     result = generate_auth_url()
     if "error" in result:
+        _auth_url_pending = False
         return result
     url = result.get("auth_url", "")
     tool_context.state["_auth_url_shown"] = True
-    tool_context.actions.skip_summarization = True
-    return {
-        "status": "success",
-        "content": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
-    }
+    _auth_url_pending = False
+    return {"status": "success", "auth_url": url}
 
 
 def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
@@ -111,21 +118,23 @@ def check_login_status(tool_context: ToolContext) -> dict:
 
 
 def switch_account(tool_context: ToolContext) -> dict:
-    """Switch Google account: logs out and returns a new sign-in URL."""
-    if tool_context.state.get("_auth_url_shown"):
-        return {"status": "already_shown"}
+    """Switch Google account: logs out and returns a new sign-in URL.
+    IMPORTANT: The agent must respond with ONLY the sign-in message, once."""
+    global _auth_url_pending
+    with _auth_lock:
+        if _auth_url_pending or tool_context.state.get("_auth_url_shown"):
+            return {"status": "duplicate", "auth_url": None}
+        _auth_url_pending = True
     logout()
     result = generate_auth_url()
     if "error" in result:
+        _auth_url_pending = False
         return result
     url = result.get("auth_url", "")
     tool_context.state["_auth_url_shown"] = True
     tool_context.state["_auth_completed"] = False
-    tool_context.actions.skip_summarization = True
-    return {
-        "status": "success",
-        "content": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
-    }
+    _auth_url_pending = False
+    return {"status": "success", "auth_url": url}
 
 
 # =============================================================================
