@@ -80,7 +80,7 @@ def login_google(tool_context: ToolContext) -> dict:
     to sign in with their Google account (Gmail + Calendar access)."""
     global _last_auth_url
     if _last_auth_url:
-        return {"status": "already_shown", "auth_url": _last_auth_url, "message": "Auth URL was already shown. STOP and wait for the user to paste the redirect URL."}
+        return {"status": "already_shown", "message": "Auth URL was already shown to the user. Do NOT show another URL. STOP and wait for the user to paste the redirect URL."}
     result = generate_auth_url()
     _last_auth_url = result.get("auth_url")
     tool_context.state["_auth_url_shown"] = True
@@ -112,7 +112,7 @@ def switch_account(tool_context: ToolContext) -> dict:
     sign-in URL. Use this when the user wants to relogin or change accounts."""
     global _last_auth_url
     if _last_auth_url:
-        return {"status": "already_shown", "auth_url": _last_auth_url, "message": "Auth URL was already shown. STOP and wait for the user to paste the redirect URL."}
+        return {"status": "already_shown", "message": "Auth URL was already shown to the user. Do NOT show another URL. STOP and wait for the user to paste the redirect URL."}
     logout()
     result = generate_auth_url()
     _last_auth_url = result.get("auth_url")
