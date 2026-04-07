@@ -14,7 +14,6 @@ warnings.filterwarnings("ignore", message=".*google-cloud-storage < 3\\.0\\.0.*"
 logging.getLogger("opentelemetry.attributes").setLevel(logging.ERROR)
 
 from google.adk import Agent
-from google.adk.agents import SequentialAgent
 from google.adk.tools.tool_context import ToolContext
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_response import LlmResponse
@@ -66,6 +65,7 @@ inbox_agent = Agent(
     - Include sender name, subject, and a one-line summary for each email.
     - When drafting replies, first read the original email, then confirm the draft content.
     - Use search_emails for targeted lookups (e.g., "from:priya", "subject:launch").
+    - Use **bold** for names, dates, and action items. Use bullet points for lists.
     """,
     tools=[gmail_toolset],
     output_key="inbox_data",
@@ -97,6 +97,7 @@ planner_agent = Agent(
     - Flag conflicts or back-to-back meetings proactively.
     - When booking, use find_free_time first, then confirm the slot before creating.
     - Use ISO 8601 format for times (e.g., "2026-04-07T14:00:00").
+    - Use **bold** for names, dates, and action items. Use bullet points for lists.
     """,
     tools=[calendar_toolset],
     output_key="planner_data",
@@ -128,6 +129,7 @@ data_agent = Agent(
     - When asked "what's on my plate" or similar, fetch pending tasks AND in_progress tasks.
     - When updating a task, first fetch tasks to find the correct ID, then call update_task.
     - Present results clearly: include names, dates, and key details.
+    - Use **bold** for names, dates, and action items. Use bullet points for lists.
     """,
     tools=[
         tools.search_notes,
@@ -141,44 +143,19 @@ data_agent = Agent(
 )
 
 
-# --- Response Formatter Agent ---
-# Pattern from docs/adk.md — Codelab 2, "Response Formatter Agent"
-
-response_formatter = Agent(
-    name="response_formatter",
-    model=model_name,
-    description="Synthesizes all gathered information into a clear, friendly response.",
-    instruction="""
-    You are the friendly voice of SmartDesk. Synthesize the gathered data into a
-    clear, actionable response.
-
-    DATA SOURCES (use whichever is present):
-    - **inbox_data**: Email summaries, search results, draft confirmations
-    - **planner_data**: Schedule details, conflicts, booking confirmations
-    - **knowledge_data**: Contact info, meeting notes, task lists, task updates
-
-    FORMATTING RULES:
-    - Lead with the most important information.
-    - Use **bold** for names, dates, and action items.
-    - Use bullet points for lists of 3+ items.
-    - Add section headers (##) only when combining data from multiple sources.
-    - Flag overdue tasks or urgent items with a clear call-out.
-    - Keep responses concise — no filler, no restating the question.
-    """,
-)
-
-
-# --- Callback: inject auth URL directly, bypassing model generation entirely ---
+# --- Callback: inject auth URL + prevent re-processing ---
 # The model NEVER sees the auth URL. The tool stores it in state, and this
 # before_model_callback intercepts the next model call to inject the URL text
 # as a canned response. Zero chance of duplication.
 
-def _inject_auth_url(callback_context: CallbackContext, llm_request):
-    """Before-model callback: if an auth URL is pending in state, return it
-    directly as a canned response instead of calling the model."""
+def _before_model(callback_context: CallbackContext, llm_request):
+    """Before-model callback with two responsibilities:
+    1. If an auth URL is pending in state, inject it directly (skip model).
+    2. If a sub-agent already returned data, stop the loop (prevent re-processing).
+    """
+    # Auth URL injection — model never sees the URL, zero duplication
     url = callback_context.state.get("_pending_auth_url")
     if url:
-        # Clear so this only fires once
         callback_context.state["_pending_auth_url"] = None
         return LlmResponse(
             content=types.Content(
@@ -189,7 +166,22 @@ def _inject_auth_url(callback_context: CallbackContext, llm_request):
                 ))],
             )
         )
-    return None  # No pending URL — proceed with normal model call
+
+    # Anti-reprocessing: if a sub-agent already produced output for this request,
+    # return that output directly instead of letting the root agent re-process.
+    for key in ("inbox_data", "planner_data", "knowledge_data"):
+        data = callback_context.state.get(key)
+        if data:
+            # Clear so we don't loop
+            callback_context.state[key] = None
+            return LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part(text=str(data))],
+                )
+            )
+
+    return None
 
 
 # --- Root Agent (Orchestrator) ---
@@ -202,6 +194,12 @@ root_agent = Agent(
     description="SmartDesk — your personal productivity assistant for emails, calendar, and knowledge management.",
     instruction="""
     You are SmartDesk, a personal productivity assistant.
+
+    IMPORTANT — NEVER RE-PROCESS:
+    If a sub-agent (inbox_agent, planner_agent, data_agent) has already returned
+    data for the current request, DO NOT call any more tools or transfer again.
+    Just present the sub-agent's response to the user. Never call check_login_status,
+    add_prompt_to_state, or transfer_to_agent a second time for the same request.
 
     STEP 1 — CLASSIFY the user's request:
     A) "switch account", "relogin", "re log in", "log out", "change account" → Call switch_account ONCE.
@@ -224,7 +222,7 @@ root_agent = Agent(
        - inbox_agent → emails
        - planner_agent → calendar/scheduling
        - data_agent → notes, contacts, tasks
-    3. For multi-domain requests, route to each relevant agent in turn.
+    3. Once a sub-agent returns, STOP. Present its response directly. Do NOT re-route or call more tools.
     """,
     tools=[
         add_prompt_to_state,
@@ -233,6 +231,6 @@ root_agent = Agent(
         tools.check_login_status,
         tools.switch_account,
     ],
-    sub_agents=[inbox_agent, planner_agent, data_agent, response_formatter],
-    before_model_callback=_inject_auth_url,
+    sub_agents=[inbox_agent, planner_agent, data_agent],
+    before_model_callback=_before_model,
 )
