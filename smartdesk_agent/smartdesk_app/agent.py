@@ -169,27 +169,45 @@ response_formatter = Agent(
 )
 
 
-# --- Callback: deduplicate auth URLs in model output ---
+# --- Callback: strip auth URL text from model responses that also contain function calls ---
+# The model generates text "Please sign in: URL" AND a function_call in the SAME response.
+# Then after the tool runs, the second LLM call generates the URL again.
+# This callback strips auth URL text from responses that contain function_calls,
+# so only the clean summarization response (second call) shows the URL.
+
+_AUTH_URL_PATTERN = re.compile(
+    r"Please sign in[:\s]*https?://accounts\.google\.com\S*", re.IGNORECASE
+)
+
 
 def _dedup_auth_url(callback_context: CallbackContext, llm_response: LlmResponse):
-    """After-model callback that strips duplicate sign-in URLs from the response.
-    Gemini sometimes repeats the 'Please sign in: ...' block twice."""
+    """After-model callback. Two cases:
+    1) Response has function_calls + text with auth URL → strip the text (URL will
+       appear in the summarization call instead).
+    2) Response has only text with auth URL repeated → keep first, strip rest.
+    """
     if not llm_response.content or not llm_response.content.parts:
         return None
-    for part in llm_response.content.parts:
-        if not part.text:
-            continue
-        # Find all occurrences of the sign-in pattern
-        pattern = r"(Please sign in:\s*https?://\S+[^\s.]*\s*(?:—|--)?\s*after approving[^.]*\.)"
-        matches = list(re.finditer(pattern, part.text, re.IGNORECASE))
-        if len(matches) > 1:
-            # Keep only the first occurrence
-            first_end = matches[0].end()
-            second_start = matches[1].start()
-            # Remove everything from after the first match to end of second match
-            cleaned = part.text[:first_end] + part.text[matches[-1].end():]
-            part.text = cleaned.strip()
-    return None  # Return None = use the (now-modified) response as-is
+
+    has_function_call = any(
+        part.function_call for part in llm_response.content.parts
+    )
+
+    if has_function_call:
+        # Case 1: strip auth URL text from mixed text+function_call responses
+        for part in llm_response.content.parts:
+            if part.text and _AUTH_URL_PATTERN.search(part.text):
+                part.text = ""
+    else:
+        # Case 2: pure text response — deduplicate repeated URLs
+        for part in llm_response.content.parts:
+            if not part.text:
+                continue
+            matches = list(_AUTH_URL_PATTERN.finditer(part.text))
+            if len(matches) > 1:
+                # Keep only text up to end of first match + any trailing instruction
+                part.text = part.text[:matches[1].start()].rstrip()
+    return None
 
 
 # --- Root Agent (Orchestrator) ---
