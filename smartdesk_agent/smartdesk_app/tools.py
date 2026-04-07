@@ -75,7 +75,12 @@ from auth import generate_auth_url, exchange_auth_code, is_logged_in
 def login_google(tool_context: ToolContext) -> dict:
     """Start Google login. Returns a URL the user must open in their browser
     to sign in with their Google account (Gmail + Calendar access)."""
-    return generate_auth_url()
+    # Prevent the model from calling this multiple times in one session
+    if tool_context.state.get("_auth_url_shown"):
+        return {"status": "already_shown", "message": "Auth URL was already shown to the user. STOP and wait for the user to paste the redirect URL. Do NOT call this tool again."}
+    result = generate_auth_url()
+    tool_context.state["_auth_url_shown"] = True
+    return result
 
 
 def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
