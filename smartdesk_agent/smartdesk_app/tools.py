@@ -86,7 +86,15 @@ def login_google(tool_context: ToolContext) -> dict:
 def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
     """Complete Google login. The user pastes the full redirect URL from their
     browser after approving access. This finishes the sign-in process."""
-    return exchange_auth_code(redirect_url)
+    # Prevent calling this multiple times with the same URL
+    if tool_context.state.get("_auth_completed"):
+        return {"status": "already_completed", "message": "Login was already completed. You can now use Gmail and Calendar features."}
+    result = exchange_auth_code(redirect_url)
+    if result.get("status") == "success":
+        tool_context.state["_auth_completed"] = True
+        # Reset so user can re-login later if needed
+        tool_context.state["_auth_url_shown"] = False
+    return result
 
 
 def check_login_status(tool_context: ToolContext) -> dict:

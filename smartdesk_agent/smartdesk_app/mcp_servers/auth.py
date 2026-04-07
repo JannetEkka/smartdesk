@@ -75,17 +75,10 @@ def exchange_auth_code(redirect_url: str) -> dict:
         with open(_TOKEN_FILE, "w") as f:
             f.write(creds.to_json())
 
-        # Get the user's email for confirmation
-        from googleapiclient.discovery import build
-        service = build("oauth2", "v2", credentials=creds)
-        user_info = service.userinfo().get().execute()
-        email = user_info.get("email", "unknown")
-
-        logger.info(f"New user authenticated: {email}")
+        logger.info("New user authenticated successfully.")
         return {
             "status": "success",
-            "email": email,
-            "message": f"Logged in as {email}. You can now use Gmail and Calendar features.",
+            "message": "Logged in successfully! You can now use Gmail and Calendar features.",
         }
     except Exception as e:
         logger.error(f"Auth exchange failed: {e}")
