@@ -5,8 +5,13 @@
 import os
 import sys
 import logging
+import warnings
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Suppress noisy SDK warnings early
+warnings.filterwarnings("ignore", message=".*non-text parts in the response.*")
+logging.getLogger("opentelemetry.attributes").setLevel(logging.ERROR)
 
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
@@ -73,15 +78,19 @@ from auth import generate_auth_url, exchange_auth_code, is_logged_in, logout
 
 
 def login_google(tool_context: ToolContext) -> dict:
-    """Start Google login. Returns an auth_url for the user to visit."""
+    """Start Google login. Returns a sign-in URL for the user."""
     if tool_context.state.get("_auth_url_shown"):
-        return {"status": "already_shown", "auth_url": ""}
+        return {"status": "already_shown"}
     result = generate_auth_url()
     if "error" in result:
         return result
     url = result.get("auth_url", "")
     tool_context.state["_auth_url_shown"] = True
-    return {"status": "success", "auth_url": url}
+    tool_context.actions.skip_summarization = True
+    return {
+        "status": "success",
+        "content": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
+    }
 
 
 def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
@@ -104,7 +113,7 @@ def check_login_status(tool_context: ToolContext) -> dict:
 def switch_account(tool_context: ToolContext) -> dict:
     """Switch Google account: logs out and returns a new sign-in URL."""
     if tool_context.state.get("_auth_url_shown"):
-        return {"status": "already_shown", "auth_url": ""}
+        return {"status": "already_shown"}
     logout()
     result = generate_auth_url()
     if "error" in result:
@@ -112,7 +121,11 @@ def switch_account(tool_context: ToolContext) -> dict:
     url = result.get("auth_url", "")
     tool_context.state["_auth_url_shown"] = True
     tool_context.state["_auth_completed"] = False
-    return {"status": "success", "auth_url": url}
+    tool_context.actions.skip_summarization = True
+    return {
+        "status": "success",
+        "content": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
+    }
 
 
 # =============================================================================

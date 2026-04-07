@@ -7,6 +7,12 @@ import logging
 import warnings
 from dotenv import load_dotenv
 
+# Suppress noisy warnings before importing SDKs
+warnings.filterwarnings("ignore", message=".*non-text parts in the response.*")
+warnings.filterwarnings("ignore", message=".*EXPERIMENTAL.*")
+warnings.filterwarnings("ignore", message=".*google-cloud-storage < 3\\.0\\.0.*")
+logging.getLogger("opentelemetry.attributes").setLevel(logging.ERROR)
+
 from google.adk import Agent
 from google.adk.agents import SequentialAgent
 from google.adk.tools.tool_context import ToolContext
@@ -17,10 +23,6 @@ from . import tools
 # Pattern from docs/adk.md — Codelab 2, "Imports and Initial Setup"
 
 load_dotenv()
-
-# Suppress noisy warnings from Gemini SDK and OpenTelemetry
-warnings.filterwarnings("ignore", message=".*non-text parts in the response.*")
-logging.getLogger("opentelemetry.attributes").setLevel(logging.ERROR)
 
 model_name = os.getenv("MODEL", "gemini-2.5-flash")
 
@@ -186,11 +188,10 @@ root_agent = Agent(
     STEP 2 — AUTHENTICATE (you handle this, do NOT transfer yet):
     1. Call check_login_status.
     2. If logged_in is true → Go to STEP 3.
-    3. If logged_in is false → Call login_google. Say NOTHING before calling it.
-    4. After login_google or switch_account responds, check the auth_url field. Reply with EXACTLY this (once, never repeat): "Please sign in: <auth_url> — after approving, copy the full URL from your browser and paste it here."
-    5. STOP. Do NOT call any more tools. Do NOT transfer to any agent. Wait for the user.
+    3. If logged_in is false → Call login_google. Say NOTHING before or after calling it.
+    4. After login_google or switch_account returns, STOP. The tool already showed the sign-in link to the user. Do NOT repeat the URL. Do NOT call any more tools. Do NOT transfer to any agent. Wait for the user.
 
-    IMPORTANT: Never show the sign-in URL more than once. If auth_url is empty or status is "already_shown", say "Sign-in link was already provided above."
+    IMPORTANT: login_google and switch_account display the sign-in URL directly. Never repeat, rephrase, or echo it.
 
     STEP 3 — ROUTE (only after auth is confirmed for email/calendar):
     1. Call add_prompt_to_state with the user's request.
