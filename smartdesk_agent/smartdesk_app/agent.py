@@ -3,6 +3,7 @@
 # Structure: root_agent → sub-agents with output_key → SequentialAgent formatter
 
 import os
+import re
 import logging
 import warnings
 from dotenv import load_dotenv
@@ -16,6 +17,9 @@ logging.getLogger("opentelemetry.attributes").setLevel(logging.ERROR)
 from google.adk import Agent
 from google.adk.agents import SequentialAgent
 from google.adk.tools.tool_context import ToolContext
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.models.llm_response import LlmResponse
+from google.genai import types
 
 from . import tools
 
@@ -165,6 +169,29 @@ response_formatter = Agent(
 )
 
 
+# --- Callback: deduplicate auth URLs in model output ---
+
+def _dedup_auth_url(callback_context: CallbackContext, llm_response: LlmResponse):
+    """After-model callback that strips duplicate sign-in URLs from the response.
+    Gemini sometimes repeats the 'Please sign in: ...' block twice."""
+    if not llm_response.content or not llm_response.content.parts:
+        return None
+    for part in llm_response.content.parts:
+        if not part.text:
+            continue
+        # Find all occurrences of the sign-in pattern
+        pattern = r"(Please sign in:\s*https?://\S+[^\s.]*\s*(?:—|--)?\s*after approving[^.]*\.)"
+        matches = list(re.finditer(pattern, part.text, re.IGNORECASE))
+        if len(matches) > 1:
+            # Keep only the first occurrence
+            first_end = matches[0].end()
+            second_start = matches[1].start()
+            # Remove everything from after the first match to end of second match
+            cleaned = part.text[:first_end] + part.text[matches[-1].end():]
+            part.text = cleaned.strip()
+    return None  # Return None = use the (now-modified) response as-is
+
+
 # --- Root Agent (Orchestrator) ---
 # Pattern from docs/adk.md — Codelab 2, "Assemble the main workflow"
 # root_agent is the ADK entry point — this variable name is mandatory
@@ -215,4 +242,5 @@ root_agent = Agent(
         tools.switch_account,
     ],
     sub_agents=[inbox_agent, planner_agent, data_agent, response_formatter],
+    after_model_callback=_dedup_auth_url,
 )
