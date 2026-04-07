@@ -92,8 +92,8 @@ def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
     result = exchange_auth_code(redirect_url)
     if result.get("status") == "success":
         tool_context.state["_auth_completed"] = True
-        # Reset so user can re-login later if needed
         tool_context.state["_auth_url_shown"] = False
+        tool_context.state["_logged_out"] = False
     return result
 
 
@@ -104,10 +104,13 @@ def check_login_status(tool_context: ToolContext) -> dict:
 
 def logout_google(tool_context: ToolContext) -> dict:
     """Log out the current Google account so a different user can sign in."""
+    if tool_context.state.get("_logged_out"):
+        return {"status": "already_logged_out", "message": "Already logged out. Now call login_google to get a new sign-in URL."}
     result = logout()
     # Reset state guards so login flow can run again
     tool_context.state["_auth_url_shown"] = False
     tool_context.state["_auth_completed"] = False
+    tool_context.state["_logged_out"] = True
     return result
 
 
