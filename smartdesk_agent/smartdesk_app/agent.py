@@ -40,7 +40,7 @@ gmail_toolset = tools.get_gmail_mcp_toolset()
 inbox_agent = Agent(
     name="inbox_agent",
     model=model_name,
-    description="Handles email tasks: reading, searching, summarizing, and drafting emails via Gmail.",
+    description="Handles email tasks via Gmail. ONLY transfer here AFTER check_login_status confirms logged_in=true.",
     instruction="""
     You are the email assistant for SmartDesk. Use the Gmail MCP tools to help users
     manage their inbox.
@@ -70,7 +70,7 @@ calendar_toolset = tools.get_calendar_mcp_toolset()
 planner_agent = Agent(
     name="planner_agent",
     model=model_name,
-    description="Handles calendar and scheduling tasks: checking schedule, finding conflicts, booking meetings.",
+    description="Handles calendar and scheduling tasks. ONLY transfer here AFTER check_login_status confirms logged_in=true.",
     instruction="""
     You are the scheduling assistant for SmartDesk. Use the Calendar MCP tools to help
     users manage their Google Calendar.
@@ -169,19 +169,28 @@ root_agent = Agent(
     instruction="""
     You are SmartDesk, a personal productivity assistant.
 
-    AUTHENTICATION (email/calendar only — data_agent does NOT need login):
-    1. Call check_login_status first.
-    2. If not logged in, call login_google ONCE. It returns an auth_url.
-    3. Respond with EXACTLY this (replacing [URL] with the auth_url) and NOTHING ELSE:
-       "Please sign in: [URL] — after approving, copy the URL from your browser and paste it here."
-    4. STOP. Do NOT call any more tools. Wait for the user's next message.
-    5. When the user pastes a URL with "localhost", call complete_google_login with it.
+    STEP 1 — CLASSIFY the user's request:
+    A) "log in", "sign in", "switch account" → Go to STEP 2.
+    B) Emails, inbox, Gmail → Go to STEP 2.
+    C) Calendar, schedule, meetings, events → Go to STEP 2.
+    D) Notes, contacts, tasks, knowledge base → Skip auth. Go to STEP 3 with data_agent.
+    E) General greeting or question → Respond directly. Do NOT transfer anywhere.
+    F) User pasted a URL containing "localhost" → Call complete_google_login with that URL, then proceed with their original request.
 
-    ROUTING (after auth):
-    - Call add_prompt_to_state, then transfer to the right sub-agent:
-      inbox_agent (emails), planner_agent (calendar), data_agent (notes/contacts/tasks).
-    - For multi-domain requests, route to each sub-agent in turn.
-    - Transfer to response_formatter for the final answer.
+    STEP 2 — AUTHENTICATE (you handle this, do NOT transfer yet):
+    1. Call check_login_status.
+    2. If logged_in is true → Go to STEP 3.
+    3. If logged_in is false → Call login_google. It returns auth_url.
+    4. Reply with ONLY: "Please sign in: [auth_url] — after approving, copy the URL from your browser and paste it here."
+    5. STOP. Do NOT call any more tools. Do NOT transfer to any agent. Wait for the user.
+
+    STEP 3 — ROUTE (only after auth is confirmed for email/calendar):
+    1. Call add_prompt_to_state with the user's request.
+    2. Transfer to the correct sub-agent:
+       - inbox_agent → emails
+       - planner_agent → calendar/scheduling
+       - data_agent → notes, contacts, tasks
+    3. For multi-domain requests, route to each relevant agent in turn.
     """,
     tools=[
         add_prompt_to_state,
