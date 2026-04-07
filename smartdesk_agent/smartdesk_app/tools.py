@@ -76,15 +76,19 @@ _last_auth_url = None  # Module-level guard against repeated calls
 
 
 def login_google(tool_context: ToolContext) -> dict:
-    """Start Google login. Returns a URL the user must open in their browser
-    to sign in with their Google account (Gmail + Calendar access)."""
+    """Start Google login. Returns a display_message to show the user. Just
+    echo the display_message exactly — do not add, modify, or repeat it."""
     global _last_auth_url
     if _last_auth_url:
-        return {"status": "already_shown", "message": "Auth URL was already shown to the user. Do NOT show another URL. STOP and wait for the user to paste the redirect URL."}
+        return {"status": "already_shown", "display_message": ""}
     result = generate_auth_url()
-    _last_auth_url = result.get("auth_url")
+    url = result.get("auth_url", "")
+    _last_auth_url = url
     tool_context.state["_auth_url_shown"] = True
-    return result
+    return {
+        "status": "success",
+        "display_message": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
+    }
 
 
 def complete_google_login(tool_context: ToolContext, redirect_url: str) -> dict:
@@ -108,17 +112,21 @@ def check_login_status(tool_context: ToolContext) -> dict:
 
 
 def switch_account(tool_context: ToolContext) -> dict:
-    """Switch Google account: logs out the current user and returns a new
-    sign-in URL. Use this when the user wants to relogin or change accounts."""
+    """Switch Google account: logs out and returns a new sign-in URL.
+    Returns a display_message — just echo it exactly, do not repeat."""
     global _last_auth_url
     if _last_auth_url:
-        return {"status": "already_shown", "message": "Auth URL was already shown to the user. Do NOT show another URL. STOP and wait for the user to paste the redirect URL."}
+        return {"status": "already_shown", "display_message": ""}
     logout()
     result = generate_auth_url()
-    _last_auth_url = result.get("auth_url")
+    url = result.get("auth_url", "")
+    _last_auth_url = url
     tool_context.state["_auth_url_shown"] = True
     tool_context.state["_auth_completed"] = False
-    return result
+    return {
+        "status": "success",
+        "display_message": f"Please sign in: {url} — after approving, copy the full URL from your browser and paste it here.",
+    }
 
 
 # =============================================================================
