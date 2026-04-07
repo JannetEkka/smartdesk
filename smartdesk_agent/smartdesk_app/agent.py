@@ -37,6 +37,7 @@ def add_prompt_to_state(
 ) -> dict[str, str]:
     """Saves the user's initial prompt to the state."""
     tool_context.state["PROMPT"] = prompt
+    tool_context.state["_routed"] = True  # Signal that we've routed to a sub-agent
     logging.info(f"[State updated] Added to PROMPT: {prompt}")
     return {"status": "success"}
 
@@ -151,7 +152,8 @@ data_agent = Agent(
 def _before_model(callback_context: CallbackContext, llm_request):
     """Before-model callback with two responsibilities:
     1. If an auth URL is pending in state, inject it directly (skip model).
-    2. If a sub-agent already returned data, stop the loop (prevent re-processing).
+    2. If _routed is set (sub-agent was invoked), stop the root agent loop
+       so it doesn't re-process the same request.
     """
     # Auth URL injection — model never sees the URL, zero duplication
     url = callback_context.state.get("_pending_auth_url")
@@ -167,17 +169,21 @@ def _before_model(callback_context: CallbackContext, llm_request):
             )
         )
 
-    # Anti-reprocessing: if a sub-agent already produced output for this request,
-    # return that output directly instead of letting the root agent re-process.
-    for key in ("inbox_data", "planner_data", "knowledge_data"):
-        data = callback_context.state.get(key)
-        if data:
-            # Clear so we don't loop
-            callback_context.state[key] = None
+    # Anti-reprocessing: _routed is set by add_prompt_to_state before transfer.
+    # After the tools execute, the LLM fires once more to process the transfer
+    # (that's _routed_calls == 1). After the sub-agent returns, the LLM fires
+    # again (_routed_calls == 2) — THAT's when we stop.
+    if callback_context.state.get("_routed"):
+        count = callback_context.state.get("_routed_calls", 0) + 1
+        callback_context.state["_routed_calls"] = count
+        if count >= 2:
+            # Sub-agent has returned. Stop the root agent loop.
+            callback_context.state["_routed"] = False
+            callback_context.state["_routed_calls"] = 0
             return LlmResponse(
                 content=types.Content(
                     role="model",
-                    parts=[types.Part(text=str(data))],
+                    parts=[types.Part(text="")],
                 )
             )
 
