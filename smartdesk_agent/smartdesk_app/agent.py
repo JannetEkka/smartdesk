@@ -35,8 +35,17 @@ model_name = os.getenv("MODEL", "gemini-2.5-flash")
 def add_prompt_to_state(
     tool_context: ToolContext, prompt: str
 ) -> dict[str, str]:
-    """Saves the user's initial prompt to the state."""
+    """Saves the user's initial prompt to the state. Only call ONCE per user message."""
+    # Guard: if the EXACT same prompt was already routed, this is a duplicate call
+    # within the same turn — block it to prevent response duplication.
+    last_routed = tool_context.state.get("_last_routed_prompt", "")
+    already_routed = tool_context.state.get("_request_routed", False)
+    if already_routed and last_routed == prompt:
+        logging.info("[State] Duplicate routing detected — same prompt already handled")
+        return {"status": "already_routed", "message": "This request was already handled by a sub-agent. Do NOT transfer again. Just present the results."}
     tool_context.state["PROMPT"] = prompt
+    tool_context.state["_last_routed_prompt"] = prompt
+    tool_context.state["_request_routed"] = True
     logging.info(f"[State updated] Added to PROMPT: {prompt}")
     return {"status": "success"}
 
@@ -54,6 +63,9 @@ inbox_agent = Agent(
     You are the email assistant for SmartDesk. Use the Gmail MCP tools to help users
     manage their inbox.
 
+    IMPORTANT: Call each tool ONLY ONCE. Do NOT call list_emails or any other tool more
+    than once per request. Once you have the data, format and return it immediately.
+
     CAPABILITIES:
     - **list_emails**: List recent inbox emails with subject, sender, and snippet.
     - **search_emails**: Search emails using Gmail query syntax (e.g., "from:alice subject:meeting").
@@ -66,6 +78,7 @@ inbox_agent = Agent(
     - When drafting replies, first read the original email, then confirm the draft content.
     - Use search_emails for targeted lookups (e.g., "from:priya", "subject:launch").
     - Use **bold** for names, dates, and action items. Use bullet points for lists.
+    - Return your response ONCE. Do NOT repeat or duplicate the email list.
     """,
     tools=[gmail_toolset],
     output_key="inbox_data",
@@ -161,10 +174,14 @@ def _before_model(callback_context: CallbackContext, llm_request):
             )
         )
 
-    # 2. Anti-reprocessing — if we already transferred to a sub-agent in this
-    #    invocation, return an empty response so the LLM loop exits silently.
+    # 2. Anti-reprocessing — if we already transferred to a sub-agent,
+    #    return an empty response so the LLM loop exits silently.
     #    The sub-agent's output was already yielded as events to the user.
+    #    Check both invocation_id match AND the state-based routing flag.
     if callback_context.state.get("_transfer_inv") == callback_context.invocation_id:
+        return LlmResponse(content=None)
+    if callback_context.state.get("_request_routed", False):
+        logging.info("[Callback] _request_routed is set — blocking re-processing")
         return LlmResponse(content=None)
 
     return None
@@ -194,14 +211,17 @@ root_agent = Agent(
     instruction="""
     You are SmartDesk, a personal productivity assistant.
 
-    IMPORTANT — NEVER RE-PROCESS:
-    If a sub-agent (inbox_agent, planner_agent, data_agent) has already returned
-    data for the current request, DO NOT call any more tools or transfer again.
-    Just present the sub-agent's response to the user. Never call check_login_status,
-    add_prompt_to_state, or transfer_to_agent a second time for the same request.
+    *** CRITICAL ANTI-DUPLICATION RULES — READ FIRST ***
+    - Call check_login_status AT MOST ONCE per user message.
+    - Call add_prompt_to_state AT MOST ONCE per user message.
+    - Transfer to a sub-agent AT MOST ONCE per user message.
+    - After a sub-agent finishes and returns its response, your job is DONE for this message.
+      Do NOT call any tools again. Do NOT transfer to any agent again. Just present the
+      sub-agent's response to the user as-is. If add_prompt_to_state returns "already_routed",
+      STOP immediately — the request was already handled.
 
     STEP 1 — CLASSIFY the user's request:
-    A) "switch account", "relogin", "re log in", "log out", "change account" → Call switch_account ONCE.
+    A) "switch account", "relogin", "re log in", "log out", "change account" → Call switch_account ONCE. Say NOTHING before or after.
     B) "log in", "sign in" → Go to STEP 2.
     C) Emails, inbox, Gmail → Go to STEP 2.
     D) Calendar, schedule, meetings, events → Go to STEP 2.
@@ -210,18 +230,19 @@ root_agent = Agent(
     G) User pasted a URL containing "localhost" → Call complete_google_login with that URL, then proceed with their original request.
 
     STEP 2 — AUTHENTICATE (you handle this, do NOT transfer yet):
-    1. Call check_login_status.
+    1. Call check_login_status ONCE.
     2. If logged_in is true → Go to STEP 3.
     3. If logged_in is false → Call login_google ONCE.
     4. After login_google or switch_account returns, STOP. Wait for the user.
 
     STEP 3 — ROUTE (only after auth is confirmed for email/calendar):
-    1. Call add_prompt_to_state with the user's request.
-    2. Transfer to the correct sub-agent:
+    1. Call add_prompt_to_state ONCE with the user's request.
+       - If it returns "already_routed", STOP. Do not transfer. Present existing results.
+    2. Transfer to the correct sub-agent ONCE:
        - inbox_agent → emails
        - planner_agent → calendar/scheduling
        - data_agent → notes, contacts, tasks
-    3. Once a sub-agent returns, STOP. Present its response directly. Do NOT re-route or call more tools.
+    3. After the sub-agent responds, STOP. Present the response. Do NOT repeat routing.
     """,
     tools=[
         add_prompt_to_state,
