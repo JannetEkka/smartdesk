@@ -8,7 +8,7 @@
 ## Slide 1: Participant Details
 
 - **Participant Name:** Jannet Ekka
-- **Problem Statement:** Multi-Agent Productivity Assistant
+- **Problem Statement:** Build a multi-agent AI system that helps users manage tasks, schedules, and information by interacting with multiple tools and data sources.
 
 ---
 
@@ -35,6 +35,11 @@ Professionals lose significant time context-switching between email, calendar, n
 **What is the core approach or workflow behind your solution?**
 
 User sends a message → Root agent classifies intent (email / calendar / knowledge base / auth) → Routes to the correct sub-agent → Sub-agent calls its tools (Gmail MCP, Calendar MCP, or AlloyDB) → Returns a formatted response. Authentication is handled in-chat via OAuth — users click a sign-in link, approve, and paste back the redirect URL. The knowledge base (contacts, notes, tasks) works without any login.
+
+SmartDesk handles multi-step workflows end-to-end:
+- **Auth → Execute:** "Show my emails" triggers login check → OAuth flow → token exchange → email fetch — all within the conversation.
+- **Query → Update:** "Mark task 3 as done" fetches tasks to verify the ID, then updates the status in AlloyDB.
+- **Search → Act:** "Draft an email about the project update" searches context, composes a full professional email, and creates a Gmail draft — no user hand-holding needed.
 
 ---
 
@@ -80,6 +85,11 @@ Most AI assistants either focus on a single domain (just email, just calendar) o
 5. **Intelligent Agent Routing**
    - Root agent classifies and routes to the right sub-agent automatically
    - Anti-duplication callbacks prevent repeated responses after agent transfers
+
+6. **Multi-Step Workflow Execution**
+   - Auth-gated workflows: auto-detects login requirement → authenticates → then executes the original request
+   - Chained operations: fetch → verify → update (e.g., task status changes)
+   - Compose-and-act: generates full email drafts from a topic, creates calendar events from natural language
 
 ---
 
