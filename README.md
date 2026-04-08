@@ -34,17 +34,17 @@ root_agent (SmartDesk orchestrator)
 
 ```
 smartdesk/
-├── smartdesk_agent/
-│   └── smartdesk_agent/
-│       ├── __init__.py        # from . import agent
-│       ├── agent.py           # Agent definitions (root_agent entry point)
-│       ├── tools.py           # MCP toolsets + AlloyDB query functions
-│       ├── authenticate.py    # CLI script for pre-auth setup
-│       ├── mcp_servers/
-│       │   ├── auth.py        # Shared OAuth 2.0 helper
-│       │   ├── gmail_server.py    # Gmail MCP server (stdio)
-│       │   └── calendar_server.py # Calendar MCP server (stdio)
-│       └── .env               # Environment config (not committed)
+├── smartdesk_agent/                # Agent package (deploy from here with ".")
+│   ├── __init__.py                 # from . import agent
+│   ├── agent.py                    # Agent definitions (root_agent entry point)
+│   ├── tools.py                    # MCP toolsets + AlloyDB query functions
+│   ├── authenticate.py             # CLI script for pre-auth setup
+│   ├── requirements.txt            # Dependencies for Cloud Run deploy
+│   ├── mcp_servers/
+│   │   ├── auth.py                 # Shared OAuth 2.0 helper
+│   │   ├── gmail_server.py         # Gmail MCP server (stdio)
+│   │   └── calendar_server.py      # Calendar MCP server (stdio)
+│   └── .env                        # Environment config (not committed)
 ├── setup/
 │   ├── setup_env.sh           # Environment setup script
 │   └── setup_alloydb.sql      # AlloyDB schema + sample data
@@ -86,7 +86,7 @@ adk web
 
 ```bash
 # Pattern from docs/adk.md — Codelab 2, Section 10
-source smartdesk_agent/smartdesk_agent/.env
+source smartdesk_agent/.env
 
 # Create service account
 gcloud iam service-accounts create ${SA_NAME} \
