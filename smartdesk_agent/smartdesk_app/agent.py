@@ -37,7 +37,6 @@ def add_prompt_to_state(
 ) -> dict[str, str]:
     """Saves the user's initial prompt to the state."""
     tool_context.state["PROMPT"] = prompt
-    tool_context.state["_routed"] = True  # Signal that we've routed to a sub-agent
     logging.info(f"[State updated] Added to PROMPT: {prompt}")
     return {"status": "success"}
 
@@ -164,27 +163,28 @@ def _before_model(callback_context: CallbackContext, llm_request):
 
 
 def _after_model(callback_context: CallbackContext, llm_response: LlmResponse):
-    """After sub-agent returns, strip function_calls from root agent's response.
-    This lets the model generate proper text (ending the turn correctly for ADK)
-    but prevents it from calling tools again (no re-processing)."""
-    if not callback_context.state.get("_routed"):
-        return None
+    """After a sub-agent has returned output, strip function_calls from the root
+    agent's response to prevent re-processing (calling check_login_status,
+    add_prompt_to_state, transfer again). The sub-agent's output_key data in
+    state is the signal that a sub-agent has completed."""
     if not llm_response.content or not llm_response.content.parts:
         return None
 
-    # Check if response has function_calls — that means re-processing
+    # Check if any sub-agent has already produced output for this session
+    sub_agent_done = any(
+        callback_context.state.get(key)
+        for key in ("inbox_data", "planner_data", "knowledge_data")
+    )
+    if not sub_agent_done:
+        return None  # No sub-agent output yet — let everything through
+
+    # Sub-agent completed. Strip function_calls to prevent re-processing.
     has_function_call = any(
-        p.function_call for p in llm_response.content.parts if p.function_call
+        p.function_call for p in llm_response.content.parts
     )
     if has_function_call:
-        # Strip function_calls, keep only text parts
-        text_parts = [p for p in llm_response.content.parts if p.text and not p.function_call]
-        if text_parts:
-            llm_response.content.parts = text_parts
-        else:
-            llm_response.content.parts = [types.Part(text="")]
-        # Reset routing state for next user message
-        callback_context.state["_routed"] = False
+        text_parts = [p for p in llm_response.content.parts if p.text]
+        llm_response.content.parts = text_parts if text_parts else [types.Part(text="")]
     return None
 
 
