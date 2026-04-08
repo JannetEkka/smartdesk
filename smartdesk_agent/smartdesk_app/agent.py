@@ -146,7 +146,8 @@ data_agent = Agent(
 # --- Callbacks: auth URL injection + anti-reprocessing ---
 
 def _before_model(callback_context: CallbackContext, llm_request):
-    """Inject auth URL directly if pending — model never sees it."""
+    """Inject auth URL if pending; block re-processing after sub-agent transfer."""
+    # 1. Auth URL injection — model never sees the raw URL
     url = callback_context.state.get("_pending_auth_url")
     if url:
         callback_context.state["_pending_auth_url"] = None
@@ -159,32 +160,26 @@ def _before_model(callback_context: CallbackContext, llm_request):
                 ))],
             )
         )
+
+    # 2. Anti-reprocessing — if we already transferred to a sub-agent in this
+    #    invocation, return an empty response so the LLM loop exits silently.
+    #    The sub-agent's output was already yielded as events to the user.
+    if callback_context.state.get("_transfer_inv") == callback_context.invocation_id:
+        return LlmResponse(content=None)
+
     return None
 
 
 def _after_model(callback_context: CallbackContext, llm_response: LlmResponse):
-    """After a sub-agent has returned output, strip function_calls from the root
-    agent's response to prevent re-processing (calling check_login_status,
-    add_prompt_to_state, transfer again). The sub-agent's output_key data in
-    state is the signal that a sub-agent has completed."""
+    """Track transfer_to_agent calls so _before_model can block re-processing."""
     if not llm_response.content or not llm_response.content.parts:
         return None
 
-    # Check if any sub-agent has already produced output for this session
-    sub_agent_done = any(
-        callback_context.state.get(key)
-        for key in ("inbox_data", "planner_data", "knowledge_data")
-    )
-    if not sub_agent_done:
-        return None  # No sub-agent output yet — let everything through
+    for part in llm_response.content.parts:
+        if part.function_call and part.function_call.name == "transfer_to_agent":
+            callback_context.state["_transfer_inv"] = callback_context.invocation_id
+            break
 
-    # Sub-agent completed. Strip function_calls to prevent re-processing.
-    has_function_call = any(
-        p.function_call for p in llm_response.content.parts
-    )
-    if has_function_call:
-        text_parts = [p for p in llm_response.content.parts if p.text]
-        llm_response.content.parts = text_parts if text_parts else [types.Part(text="")]
     return None
 
 
