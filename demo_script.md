@@ -8,9 +8,9 @@
 
 **[Show: SmartDesk web UI landing page]**
 
-> "Hi, I'm [Your Name], and this is SmartDesk — a multi-agent productivity assistant built for the Google Cloud Gen AI Academy Hackathon.
+> "Hi, I'm [Your Name], and this is SmartDesk — a multi-agent AI system built for the Google Cloud Gen AI Academy Hackathon.
 >
-> SmartDesk uses Google's Agent Development Kit — ADK — to orchestrate multiple AI agents powered by Gemini 2.5 Flash. It connects to Gmail and Google Calendar through custom MCP servers, and uses AlloyDB with vector search as a personal knowledge base. Everything runs serverless on Cloud Run."
+> The problem statement asks us to build a system that helps users manage tasks, schedules, and information using multiple agents, tools, and data sources. SmartDesk does exactly that — it uses ADK to orchestrate multiple agents powered by Gemini 2.5 Flash, connects to Gmail and Google Calendar through custom MCP servers, and uses AlloyDB with vector search as a structured database. It handles multi-step workflows end-to-end and is deployed as an API on Cloud Run."
 
 ---
 
@@ -24,21 +24,29 @@
 
 **[Wait for response — shows task list with priorities and due dates]**
 
-> "SmartDesk routes this to the data_agent, which queries AlloyDB. You can see tasks sorted by priority — high priority ones first, with due dates."
+> "SmartDesk routes this to the data_agent, which queries AlloyDB — that's the structured database requirement. Tasks are sorted by priority with due dates."
 
 **(~10 sec pause between prompts)**
 
-**Prompt 2:** `Search my notes about product launch`
+**Prompt 2:** `Mark task 3 as done`
+
+**[Wait for response — confirms task updated]**
+
+> "This is a multi-step workflow — the agent fetches the task, verifies the ID, then updates the status in AlloyDB. All in one request."
+
+**(~10 sec pause)**
+
+**Prompt 3:** `Search my notes about product launch`
 
 **[Wait for response — shows semantically matched notes]**
 
 > "This is vector search in action. It uses the text-embedding-005 model inside AlloyDB to find semantically relevant notes — not just keyword matching. It found our Q3 launch planning discussion even though the query doesn't exactly match the note title."
 
-**Prompt 3:** `Look up contact info for Priya`
+**Prompt 4:** `Look up contact info for Priya`
 
 **[Wait for response — shows contact details]**
 
-> "Contacts are also in AlloyDB. Quick lookup by name, email, or company."
+> "Contacts are also in AlloyDB. Quick lookup by name, email, or company. That covers storing and retrieving structured data from a database."
 
 ---
 
@@ -48,15 +56,15 @@
 
 > "Now let's access email and calendar. These require Google OAuth."
 
-**Prompt 4:** `Show me my latest emails`
+**Prompt 5:** `Show me my latest emails`
 
 **[Wait — SmartDesk detects not logged in, shows Google sign-in link]**
 
-> "SmartDesk checks login status automatically. Since we're not signed in, it generates an OAuth URL. Let me sign in."
+> "SmartDesk checks login status automatically. Since we're not signed in, it generates an OAuth URL. This is a multi-step workflow — it checks auth, generates the URL, and waits. Let me sign in."
 
 **[Click the sign-in link, approve in browser, copy redirect URL, paste back in chat]**
 
-> "I approve access, then paste the redirect URL back. SmartDesk exchanges this for tokens — and we're authenticated."
+> "I paste the redirect URL back. SmartDesk exchanges the authorization code for tokens — and we're authenticated. That whole flow — check login, generate URL, exchange code, fetch emails — is all handled automatically across multiple steps."
 
 ---
 
@@ -68,7 +76,7 @@
 
 **(Start new session for calendar)**
 
-**Prompt 5:** `Search for emails from support@hack2skill.com`
+**Prompt 6:** `Search for emails from support@hack2skill.com`
 
 **[Wait for response — shows filtered email results]**
 
@@ -80,13 +88,13 @@
 
 **[Start new session — already logged in from before]**
 
-**Prompt 6:** `What's on my schedule today?`
+**Prompt 7:** `What's on my schedule today?`
 
 **[Wait for response — shows today's events]**
 
 > "For calendar, the planner_agent connects to a custom Calendar MCP server. It lists events, finds free time, and can create new meetings."
 
-**Prompt 7:** `Find free time slots for tomorrow`
+**Prompt 8:** `Find free time slots for tomorrow`
 
 **[Wait for response — shows available slots]**
 
@@ -96,7 +104,7 @@
 
 ## PART 5: Account Switch + Wrap-up (2:40 – 3:00)
 
-**Prompt 8:** `Switch account`
+**Prompt 9:** `Switch account`
 
 **[Wait — SmartDesk logs out, generates new sign-in URL]**
 
@@ -104,7 +112,7 @@
 
 **[Show: Architecture diagram or slide briefly]**
 
-> "To recap — SmartDesk is a multi-agent system: a root orchestrator with three specialized sub-agents for email, calendar, and knowledge base. Built with ADK, Gemini 2.5 Flash, MCP, and AlloyDB, all deployed on Cloud Run.
+> "To recap — SmartDesk meets every core requirement: a primary agent coordinating three sub-agents, structured data in AlloyDB, multiple tools via MCP, multi-step workflows like auth-then-execute, and it's deployed as an API on Cloud Run.
 >
 > Thanks for watching!"
 
