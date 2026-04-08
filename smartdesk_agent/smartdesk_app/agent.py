@@ -61,6 +61,7 @@ GUIDELINES:
 - For inbox summaries, group by priority: urgent/action-needed first, FYI second.
 - Include sender name, subject, and a one-line summary for each email.
 - Use **bold** for names, dates, and action items. Use bullet points for lists.
+- When drafting emails: ALWAYS compose a complete, professional email body yourself based on the topic given. NEVER ask the user to provide the body — write it for them. After drafting, show the full draft (To, Subject, Body) so the user can review it.
 """,
     tools=[gmail_toolset],
     output_key="inbox_data",
