@@ -20,7 +20,7 @@ from google_auth_oauthlib.flow import Flow
 
 logger = logging.getLogger(__name__)
 
-# Token + client secret paths (relative to smartdesk_app/)
+# Token + client secret paths (relative to smartdesk_agent/)
 _APP_DIR = Path(__file__).parent.parent
 _CLIENT_SECRET = _APP_DIR / "client_secret.json"
 _TOKEN_FILE = _APP_DIR / "token.json"

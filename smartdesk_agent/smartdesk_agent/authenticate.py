@@ -2,7 +2,7 @@
 """Pre-authenticate Gmail & Calendar OAuth for SmartDesk MCP servers.
 
 Run this ONCE before starting adk web:
-    python smartdesk_agent/smartdesk_app/authenticate.py
+    python smartdesk_agent/smartdesk_agent/authenticate.py
 
 It opens a browser for Google consent, then saves token.json.
 The MCP servers will use this saved token automatically.

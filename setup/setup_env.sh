@@ -35,7 +35,7 @@ echo "APIs enabled successfully."
 # Pattern from docs/adk.md — Codelab 2, "Create the .env file"
 echo ""
 echo "Creating .env file..."
-cat <<EOF > smartdesk_agent/smartdesk_app/.env
+cat <<EOF > smartdesk_agent/smartdesk_agent/.env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=$PROJECT_ID
 GOOGLE_CLOUD_LOCATION=us-central1
@@ -46,12 +46,12 @@ SERVICE_ACCOUNT=${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com
 MODEL=gemini-2.5-flash
 EOF
 
-echo ".env file created at smartdesk_agent/smartdesk_app/.env"
+echo ".env file created at smartdesk_agent/smartdesk_agent/.env"
 
 # 4. Check the .env file
 echo ""
 echo "Verify .env contents:"
-cat smartdesk_agent/smartdesk_app/.env
+cat smartdesk_agent/smartdesk_agent/.env
 
 echo ""
 echo "=== Setup Complete ==="

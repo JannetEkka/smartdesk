@@ -93,13 +93,13 @@ No response_formatter agent — each sub-agent formats its own output via `outpu
 
 | File | What It Does |
 |------|-------------|
-| `smartdesk_agent/smartdesk_app/__init__.py` | Package init: `from . import agent` |
-| `smartdesk_agent/smartdesk_app/agent.py` | All agent definitions, callbacks, root_agent entry point |
-| `smartdesk_agent/smartdesk_app/tools.py` | MCP toolsets + AlloyDB tools + OAuth tools |
-| `smartdesk_agent/smartdesk_app/mcp_servers/auth.py` | Shared OAuth 2.0 helper (generate_auth_url, exchange_auth_code, is_logged_in, logout) |
-| `smartdesk_agent/smartdesk_app/mcp_servers/gmail_server.py` | Gmail MCP server (list, search, read, draft emails) |
-| `smartdesk_agent/smartdesk_app/mcp_servers/calendar_server.py` | Calendar MCP server (list, search, create events, find free time) |
-| `smartdesk_agent/smartdesk_app/.env` | Environment config (not committed) |
+| `smartdesk_agent/smartdesk_agent/__init__.py` | Package init: `from . import agent` |
+| `smartdesk_agent/smartdesk_agent/agent.py` | All agent definitions, callbacks, root_agent entry point |
+| `smartdesk_agent/smartdesk_agent/tools.py` | MCP toolsets + AlloyDB tools + OAuth tools |
+| `smartdesk_agent/smartdesk_agent/mcp_servers/auth.py` | Shared OAuth 2.0 helper (generate_auth_url, exchange_auth_code, is_logged_in, logout) |
+| `smartdesk_agent/smartdesk_agent/mcp_servers/gmail_server.py` | Gmail MCP server (list, search, read, draft emails) |
+| `smartdesk_agent/smartdesk_agent/mcp_servers/calendar_server.py` | Calendar MCP server (list, search, create events, find free time) |
+| `smartdesk_agent/smartdesk_agent/.env` | Environment config (not committed) |
 | `setup/setup_alloydb.sql` | Database schema + sample data |
 | `requirements.txt` | Python dependencies |
 
@@ -144,7 +144,7 @@ PROJECT_ID=$(gcloud config get-value project)
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
 SA_NAME=smartdesk-cr-service
 
-cat <<EOF > smartdesk_agent/smartdesk_app/.env
+cat <<EOF > smartdesk_agent/smartdesk_agent/.env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=$PROJECT_ID
 GOOGLE_CLOUD_LOCATION=us-central1
@@ -210,7 +210,7 @@ adk web
 
 ```bash
 cd ~/smartdesk/smartdesk_agent
-source smartdesk_app/.env
+source smartdesk_agent/.env
 
 # Create service account (if not already created)
 gcloud iam service-accounts create ${SA_NAME} \

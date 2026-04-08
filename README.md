@@ -35,7 +35,7 @@ root_agent (SmartDesk orchestrator)
 ```
 smartdesk/
 ├── smartdesk_agent/
-│   └── smartdesk_app/
+│   └── smartdesk_agent/
 │       ├── __init__.py        # from . import agent
 │       ├── agent.py           # Agent definitions (root_agent entry point)
 │       ├── tools.py           # MCP toolsets + AlloyDB query functions
@@ -86,7 +86,7 @@ adk web
 
 ```bash
 # Pattern from docs/adk.md — Codelab 2, Section 10
-source smartdesk_agent/smartdesk_app/.env
+source smartdesk_agent/smartdesk_agent/.env
 
 # Create service account
 gcloud iam service-accounts create ${SA_NAME} \
