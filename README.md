@@ -149,6 +149,10 @@ These prompts demonstrate SmartDesk's capabilities across all three tracks:
 - "Prepare me for my next meeting" (calendar + notes)
 - "What's on my plate today?" (tasks + calendar)
 
+**Account Management:**
+- "Switch account" — logs out and provides a new Google sign-in link
+- "Relogin" or "Change account" — same as above, lets you switch to a different Google account
+
 ## Documentation
 
 - [ADK Reference (Track 1)](docs/adk.md)
