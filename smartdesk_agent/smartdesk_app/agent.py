@@ -36,16 +36,14 @@ def add_prompt_to_state(
     tool_context: ToolContext, prompt: str
 ) -> dict[str, str]:
     """Saves the user's initial prompt to the state. Only call ONCE per user message."""
-    # Guard: if the EXACT same prompt was already routed, this is a duplicate call
-    # within the same turn — block it to prevent response duplication.
-    last_routed = tool_context.state.get("_last_routed_prompt", "")
-    already_routed = tool_context.state.get("_request_routed", False)
-    if already_routed and last_routed == prompt:
-        logging.info("[State] Duplicate routing detected — same prompt already handled")
-        return {"status": "already_routed", "message": "This request was already handled by a sub-agent. Do NOT transfer again. Just present the results."}
+    # Guard: if the EXACT same prompt was already saved, this is a duplicate call
+    # within the same turn — tell the LLM to proceed to transfer, not re-save.
+    last_prompt = tool_context.state.get("_last_routed_prompt", "")
+    if last_prompt == prompt:
+        logging.info("[State] Duplicate add_prompt_to_state detected — same prompt")
+        return {"status": "already_saved", "message": "Prompt already saved. Proceed to transfer to the correct sub-agent."}
     tool_context.state["PROMPT"] = prompt
     tool_context.state["_last_routed_prompt"] = prompt
-    tool_context.state["_request_routed"] = True
     logging.info(f"[State updated] Added to PROMPT: {prompt}")
     return {"status": "success"}
 
@@ -174,14 +172,11 @@ def _before_model(callback_context: CallbackContext, llm_request):
             )
         )
 
-    # 2. Anti-reprocessing — if we already transferred to a sub-agent,
-    #    return an empty response so the LLM loop exits silently.
+    # 2. Anti-reprocessing — if we already transferred to a sub-agent in this
+    #    invocation, return an empty response so the LLM loop exits silently.
     #    The sub-agent's output was already yielded as events to the user.
-    #    Check both invocation_id match AND the state-based routing flag.
     if callback_context.state.get("_transfer_inv") == callback_context.invocation_id:
-        return LlmResponse(content=None)
-    if callback_context.state.get("_request_routed", False):
-        logging.info("[Callback] _request_routed is set — blocking re-processing")
+        logging.info("[Callback] Transfer already done in this invocation — blocking re-processing")
         return LlmResponse(content=None)
 
     return None
