@@ -144,18 +144,10 @@ data_agent = Agent(
 )
 
 
-# --- Callback: inject auth URL + prevent re-processing ---
-# The model NEVER sees the auth URL. The tool stores it in state, and this
-# before_model_callback intercepts the next model call to inject the URL text
-# as a canned response. Zero chance of duplication.
+# --- Callbacks: auth URL injection + anti-reprocessing ---
 
 def _before_model(callback_context: CallbackContext, llm_request):
-    """Before-model callback with two responsibilities:
-    1. If an auth URL is pending in state, inject it directly (skip model).
-    2. If _routed is set (sub-agent was invoked), stop the root agent loop
-       so it doesn't re-process the same request.
-    """
-    # Auth URL injection — model never sees the URL, zero duplication
+    """Inject auth URL directly if pending — model never sees it."""
     url = callback_context.state.get("_pending_auth_url")
     if url:
         callback_context.state["_pending_auth_url"] = None
@@ -168,25 +160,31 @@ def _before_model(callback_context: CallbackContext, llm_request):
                 ))],
             )
         )
+    return None
 
-    # Anti-reprocessing: _routed is set by add_prompt_to_state before transfer.
-    # After the tools execute, the LLM fires once more to process the transfer
-    # (that's _routed_calls == 1). After the sub-agent returns, the LLM fires
-    # again (_routed_calls == 2) — THAT's when we stop.
-    if callback_context.state.get("_routed"):
-        count = callback_context.state.get("_routed_calls", 0) + 1
-        callback_context.state["_routed_calls"] = count
-        if count >= 2:
-            # Sub-agent has returned. Stop the root agent loop.
-            callback_context.state["_routed"] = False
-            callback_context.state["_routed_calls"] = 0
-            return LlmResponse(
-                content=types.Content(
-                    role="model",
-                    parts=[types.Part(text="")],
-                )
-            )
 
+def _after_model(callback_context: CallbackContext, llm_response: LlmResponse):
+    """After sub-agent returns, strip function_calls from root agent's response.
+    This lets the model generate proper text (ending the turn correctly for ADK)
+    but prevents it from calling tools again (no re-processing)."""
+    if not callback_context.state.get("_routed"):
+        return None
+    if not llm_response.content or not llm_response.content.parts:
+        return None
+
+    # Check if response has function_calls — that means re-processing
+    has_function_call = any(
+        p.function_call for p in llm_response.content.parts if p.function_call
+    )
+    if has_function_call:
+        # Strip function_calls, keep only text parts
+        text_parts = [p for p in llm_response.content.parts if p.text and not p.function_call]
+        if text_parts:
+            llm_response.content.parts = text_parts
+        else:
+            llm_response.content.parts = [types.Part(text="")]
+        # Reset routing state for next user message
+        callback_context.state["_routed"] = False
     return None
 
 
@@ -239,4 +237,5 @@ root_agent = Agent(
     ],
     sub_agents=[inbox_agent, planner_agent, data_agent],
     before_model_callback=_before_model,
+    after_model_callback=_after_model,
 )
