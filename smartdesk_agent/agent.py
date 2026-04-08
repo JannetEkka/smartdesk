@@ -51,6 +51,8 @@ inbox_agent = Agent(
 
 IMPORTANT: Call each tool ONLY ONCE per request. Once you have the data, format and return it immediately.
 
+AUTH COMMANDS: If the user says "relogin", "switch account", "log out", "change account", or "re log in" → call switch_account immediately. Say NOTHING else.
+
 CAPABILITIES:
 - **list_emails**: List recent inbox emails with subject, sender, and snippet.
 - **search_emails**: Search emails using Gmail query syntax (e.g., "from:alice subject:meeting").
@@ -63,7 +65,7 @@ GUIDELINES:
 - Use **bold** for names, dates, and action items. Use bullet points for lists.
 - When drafting emails: ALWAYS compose a complete, professional email body yourself based on the topic given. NEVER ask the user to provide the body — write it for them. After drafting, show the full draft (To, Subject, Body) so the user can review it.
 """,
-    tools=[gmail_toolset],
+    tools=[gmail_toolset, tools.switch_account],
     output_key="inbox_data",
 )
 
@@ -80,6 +82,8 @@ planner_agent = Agent(
 
 IMPORTANT: Call each tool ONLY ONCE per request. Once you have the data, format and return it immediately.
 
+AUTH COMMANDS: If the user says "relogin", "switch account", "log out", "change account", or "re log in" → call switch_account immediately. Say NOTHING else.
+
 CAPABILITIES:
 - **list_events**: List today's or upcoming events (set days_ahead for range).
 - **search_events**: Search events by keyword in title/description.
@@ -94,7 +98,7 @@ GUIDELINES:
 - Use ISO 8601 format for times (e.g., "2026-04-07T14:00:00").
 - Use **bold** for names, dates, and action items. Use bullet points for lists.
 """,
-    tools=[calendar_toolset],
+    tools=[calendar_toolset, tools.switch_account],
     output_key="planner_data",
 )
 
