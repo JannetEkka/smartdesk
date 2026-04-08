@@ -163,11 +163,18 @@ def _before_model(callback_context: CallbackContext, llm_request):
         )
 
     # 2. Anti-reprocessing — if a sub-agent already handled this request,
-    #    stop the LLM loop so we don't duplicate the response.
+    #    stop the LLM loop by returning a text response (ADK ends the turn
+    #    when it sees text with no function calls). content=None does NOT
+    #    stop the loop — ADK retries, causing duplication.
     if callback_context.state.get("_transferred"):
         callback_context.state["_transferred"] = False  # Reset for next user message
-        logging.info("[Callback] Sub-agent already handled this request — stopping LLM loop")
-        return LlmResponse(content=None)
+        logging.info("[Callback] Sub-agent already handled this request — ending turn")
+        return LlmResponse(
+            content=types.Content(
+                role="model",
+                parts=[types.Part(text="")],
+            )
+        )
 
     return None
 
@@ -200,11 +207,11 @@ A) "switch account", "relogin", "re log in", "log out", "change account" → Cal
 B) "log in", "sign in" → Go to STEP 2.
 C) Emails, inbox, Gmail → Go to STEP 2.
 D) Calendar, schedule, meetings, events → Go to STEP 2.
-E) Notes, contacts, tasks, knowledge base → Skip auth. Go to STEP 3 with data_agent.
+E) Notes, contacts, tasks, knowledge base → Do NOT call check_login_status. Go directly to STEP 3 with data_agent.
 F) General greeting or question → Respond directly. Do NOT transfer anywhere.
 G) User pasted a URL containing "localhost" → Call complete_google_login with that URL, then proceed.
 
-STEP 2 — AUTHENTICATE (do NOT transfer yet):
+STEP 2 — AUTHENTICATE (required for email and calendar ONLY):
 1. Call check_login_status.
 2. If logged_in is true → Go to STEP 3.
 3. If logged_in is false → Call login_google. Then STOP. Wait for the user.
