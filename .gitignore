@@ -29,3 +29,9 @@ Thumbs.db
 # Google Cloud
 *.json
 !agent.json
+
+# Project-local notes / demo assets (not for public repo)
+CLAUDE.md
+docs/
+demo_script.md
+ppt_content.md
