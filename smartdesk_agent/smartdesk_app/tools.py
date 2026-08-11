@@ -181,19 +181,55 @@ def _query_db(sql: str, params: dict = None) -> list[dict]:
 # Follows docs/alloydb.md — Codelab 3, vector search with embedding()
 # =============================================================================
 
+# Retrieval mode, selected with SMARTDESK_RETRIEVAL:
+#   baseline  whole-note vector search (default — matches the original tool)
+#   chunked   chunk-level search collapsed back to parent notes
+#   hybrid    fuses whole-note, chunk, and lexical rankings
+#
+# The default is deliberately the original behaviour. On the eval set no
+# alternative beat it by a statistically significant margin, so promoting one
+# to default is not justified by the evidence. See evals/RESULTS.md.
+_RETRIEVAL_MODE = os.getenv("SMARTDESK_RETRIEVAL", "baseline").lower()
+
+_SEARCH_LIMIT = int(os.getenv("SMARTDESK_SEARCH_LIMIT", "5"))
+
+#: Candidates fetched before fusion in hybrid mode.
+_HYBRID_CANDIDATES = int(os.getenv("SMARTDESK_HYBRID_CANDIDATES", "25"))
+
+
 def search_notes(tool_context: ToolContext, query: str) -> list[dict]:
     """Search meeting notes using vector similarity.
-    Uses embedding() and <=> operator from docs/alloydb.md — Codelab 3, Task 4."""
-    sql = """
-    SELECT id, title, content, created_at,
-           1 - (content_embedding <=> embedding('text-embedding-005', :query)::vector) AS similarity
-    FROM notes
-    ORDER BY content_embedding <=> embedding('text-embedding-005', :query)::vector
-    LIMIT 5;
+
+    Embeddings are computed client-side and passed as a bound parameter rather
+    than through AlloyDB's in-database embedding() function, so the same query
+    runs on AlloyDB and on stock Postgres with pgvector. The <=> cosine
+    distance operator is identical on both.
+
+    Retrieval mode comes from SMARTDESK_RETRIEVAL; see evals/RESULTS.md for
+    the measurements behind the default.
     """
-    results = _query_db(sql, {"query": query})
-    logging.info(f"[search_notes] Found {len(results)} results for: {query}")
-    return results
+    from .rag import rerankers
+    from .rag.retrieval import retrieve_chunks, retrieve_notes
+
+    try:
+        if _RETRIEVAL_MODE == "hybrid":
+            notes = retrieve_notes(query, k=_HYBRID_CANDIDATES)
+            chunks = retrieve_chunks(query, k=_HYBRID_CANDIDATES)
+            hits = rerankers.HybridFusionReranker().fuse(
+                query, notes, chunks, top_k=_SEARCH_LIMIT
+            )
+        elif _RETRIEVAL_MODE == "chunked":
+            hits = retrieve_chunks(query, k=_SEARCH_LIMIT)
+        else:
+            hits = retrieve_notes(query, k=_SEARCH_LIMIT)
+    except Exception as e:
+        logging.error(f"[search_notes] Retrieval failed: {e}")
+        return [{"error": str(e)}]
+
+    logging.info(
+        f"[search_notes] mode={_RETRIEVAL_MODE} found {len(hits)} results for: {query}"
+    )
+    return [hit.to_dict() for hit in hits]
 
 
 def get_contacts(tool_context: ToolContext, search_term: str) -> list[dict]:
@@ -227,15 +263,65 @@ def get_tasks(tool_context: ToolContext, status: str = "pending") -> list[dict]:
 
 def add_note(tool_context: ToolContext, title: str, content: str) -> dict:
     """Add a new note with auto-generated vector embedding.
-    Uses in-database embeddings from docs/alloydb.md — Codelab 2."""
-    sql = """
-    INSERT INTO notes (title, content, content_embedding)
-    VALUES (:title, :content, embedding('text-embedding-005', :content)::vector)
-    RETURNING id, title, created_at;
+
+    Writes the whole-note embedding and, when the note_chunks table exists,
+    the note's chunks too. Keeping both indexes current on write is what lets
+    SMARTDESK_RETRIEVAL be switched without a re-ingest.
     """
-    results = _query_db(sql, {"title": title, "content": content})
+    from .rag.chunking import chunk_text
+    from .rag.embeddings import get_embedder, to_pgvector
+
+    embedder = get_embedder()
+    body = f"{title}\n{content}"
+
+    try:
+        note_vec = embedder.embed_documents([body])[0]
+    except Exception as e:
+        logging.error(f"[add_note] Embedding failed: {e}")
+        return {"error": f"Could not embed note: {e}"}
+
+    results = _query_db(
+        """
+        INSERT INTO notes (title, content, content_embedding)
+        VALUES (:title, :content, CAST(:vec AS vector))
+        RETURNING id, title, created_at;
+        """,
+        {"title": title, "content": content, "vec": to_pgvector(note_vec)},
+    )
+    if not results or "error" in results[0]:
+        return results[0] if results else {"error": "Failed to create note"}
+
+    note_id = results[0]["id"]
+    try:
+        chunks = chunk_text(body)
+        if chunks:
+            vectors = embedder.embed_documents([c.text for c in chunks])
+            for chunk, vec in zip(chunks, vectors):
+                _query_db(
+                    """
+                    INSERT INTO note_chunks
+                        (note_id, chunk_index, content, token_count, content_embedding)
+                    VALUES (:note_id, :idx, :content, :tokens, CAST(:vec AS vector))
+                    ON CONFLICT (note_id, chunk_index) DO UPDATE
+                      SET content = EXCLUDED.content,
+                          token_count = EXCLUDED.token_count,
+                          content_embedding = EXCLUDED.content_embedding;
+                    """,
+                    {
+                        "note_id": note_id,
+                        "idx": chunk.index,
+                        "content": chunk.text,
+                        "tokens": chunk.token_count,
+                        "vec": to_pgvector(vec),
+                    },
+                )
+    except Exception as e:
+        # The note itself is saved; a missing chunks table only means the
+        # chunked and hybrid retrieval modes are unavailable.
+        logging.warning(f"[add_note] Chunk indexing skipped for note {note_id}: {e}")
+
     logging.info(f"[add_note] Created note: {title}")
-    return results[0] if results else {"error": "Failed to create note"}
+    return results[0]
 
 
 def add_task(

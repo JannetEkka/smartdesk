@@ -35,3 +35,6 @@ CLAUDE.md
 docs/
 demo_script.md
 ppt_content.md
+
+# Eval scratch
+evals/corpus/*.local.jsonl

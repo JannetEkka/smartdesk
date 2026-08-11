@@ -1,0 +1,352 @@
+"""Reranking strategies.
+
+Dense retrieval gives a ranking from one bi-encoder similarity score. A
+reranker takes a wider candidate set and reorders it using a signal the
+retriever did not have.
+
+Three implementations, spanning the cost/accuracy range:
+
+``RRFReranker``
+    Free. Scores candidates with BM25 and fuses that ranking with the dense
+    ranking using reciprocal rank fusion. Complements dense retrieval on rare
+    exact terms — names, error strings, product nouns — which is where
+    embeddings are weakest. No model call, no network.
+
+``CrossEncoderReranker``
+    Cheap. A real cross-encoder (ms-marco-MiniLM-L-6-v2) that scores query and
+    document jointly rather than comparing two independent vectors. Runs on
+    CPU. Far more accurate than bi-encoder similarity in the general case, at
+    the cost of one forward pass per candidate.
+
+``GeminiReranker``
+    Most expensive. Uses Gemini as a cross-encoder by asking it to score each
+    candidate's relevance. Highest ceiling, but adds a network round trip and
+    real per-query cost.
+
+BM25 is implemented here rather than pulled in as a dependency: it is twenty
+lines, and the point of this pipeline is that the mechanics stay legible.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+import os
+import re
+from collections import Counter
+from typing import Callable, Sequence
+
+from .retrieval import RetrievedNote
+
+logger = logging.getLogger(__name__)
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# Common words carry no discriminative signal and inflate BM25 scores for
+# long documents. A small stoplist is enough for this corpus.
+_STOPWORDS = frozenset(
+    """a an and are as at be by did do does for from had has have how i if in
+    is it its of on or our that the their there they this to too was we were
+    what when where which who why will with you your""".split()
+)
+
+
+def _tokenize(text: str) -> list[str]:
+    return [t for t in _TOKEN_RE.findall(text.lower()) if t not in _STOPWORDS]
+
+
+def bm25_scores(
+    query: str, documents: Sequence[str], k1: float = 1.5, b: float = 0.75
+) -> list[float]:
+    """Score documents against a query with Okapi BM25.
+
+    IDF is computed over the candidate set rather than the whole corpus. That
+    is the standard approximation when reranking: it costs nothing, and within
+    a candidate set the relative ordering is what matters.
+    """
+    docs = [_tokenize(d) for d in documents]
+    if not docs:
+        return []
+    n = len(docs)
+    avgdl = sum(len(d) for d in docs) / n or 1.0
+
+    doc_freq: Counter[str] = Counter()
+    for d in docs:
+        doc_freq.update(set(d))
+
+    q_terms = _tokenize(query)
+    scores = []
+    for d in docs:
+        tf = Counter(d)
+        dl = len(d)
+        score = 0.0
+        for term in q_terms:
+            if term not in tf:
+                continue
+            df = doc_freq[term]
+            # +0.5 smoothing keeps IDF positive when a term is in every doc.
+            idf = math.log((n - df + 0.5) / (df + 0.5) + 1.0)
+            freq = tf[term]
+            score += idf * (freq * (k1 + 1)) / (freq + k1 * (1 - b + b * dl / avgdl))
+        scores.append(score)
+    return scores
+
+
+def _rrf(rank: int, k: int = 60) -> float:
+    """Reciprocal rank fusion weight for a 1-indexed rank."""
+    return 1.0 / (k + rank)
+
+
+def _lexical_ranking(query: str, ids: Sequence[int], texts: Sequence[str]) -> list[int]:
+    """Rank ids by BM25, dropping anything that scores zero.
+
+    Documents sharing no query term carry no lexical evidence. Leaving them in
+    the ranking would hand them a position — and therefore an RRF
+    contribution — purely from sort order, which lets a note with no match
+    outscore a genuine one. Only documents with a non-zero score participate.
+    """
+    scores = bm25_scores(query, texts)
+    matching = [i for i in range(len(ids)) if scores[i] > 0]
+    matching.sort(key=lambda i: scores[i], reverse=True)
+    return [ids[i] for i in matching]
+
+
+class RRFReranker:
+    """Fuse the dense ranking with a BM25 ranking.
+
+    Reciprocal rank fusion combines rankings without needing the two score
+    scales to be comparable, which is what makes it robust: cosine similarity
+    and BM25 are not on the same scale and calibrating them is fiddly.
+    """
+
+    name = "rrf"
+    #: No model call, so cost is zero and latency is microseconds.
+    cost_per_query_usd = 0.0
+
+    def __init__(self, k: int = 60) -> None:
+        self._k = k
+
+    def rerank(
+        self, query: str, candidates: Sequence[RetrievedNote], top_k: int = 5
+    ) -> list[RetrievedNote]:
+        if not candidates:
+            return []
+        # Dense ranking is the order the retriever returned.
+        dense_rank = {c.note_id: i + 1 for i, c in enumerate(candidates)}
+
+        lex_ranking = _lexical_ranking(
+            query,
+            [c.note_id for c in candidates],
+            [(c.chunk_text or c.content) for c in candidates],
+        )
+        lex_rank = {note_id: pos + 1 for pos, note_id in enumerate(lex_ranking)}
+
+        def score(c: RetrievedNote) -> float:
+            total = _rrf(dense_rank[c.note_id], self._k)
+            if c.note_id in lex_rank:
+                total += _rrf(lex_rank[c.note_id], self._k)
+            return total
+
+        return sorted(candidates, key=score, reverse=True)[:top_k]
+
+
+def fuse_rankings(
+    rankings: Sequence[Sequence[int]], k: int = 60, weights: Sequence[float] | None = None
+) -> dict[int, float]:
+    """Reciprocal rank fusion over several rankings of note ids.
+
+    Returns a mapping of note id to fused score. Ids missing from a ranking
+    simply contribute nothing from it, which is the behaviour that lets this
+    combine rankings over different candidate sets.
+    """
+    weights = list(weights) if weights else [1.0] * len(rankings)
+    scores: dict[int, float] = {}
+    for ranking, weight in zip(rankings, weights):
+        for position, note_id in enumerate(ranking, start=1):
+            scores[note_id] = scores.get(note_id, 0.0) + weight * _rrf(position, k)
+    return scores
+
+
+class HybridFusionReranker:
+    """Fuse whole-note dense, chunk dense, and lexical rankings.
+
+    The three signals fail differently. Whole-note embeddings capture what a
+    note is broadly about. Chunk embeddings capture specific passages inside
+    long notes. BM25 catches rare exact terms that embeddings smooth away.
+    Fusing all three keeps the recall of the union while letting agreement
+    between signals decide the order.
+
+    Unlike the other rerankers this one needs both candidate lists, so it is
+    driven by the harness rather than by the generic rerank() path.
+    """
+
+    name = "hybrid-rrf"
+    cost_per_query_usd = 0.0
+
+    def __init__(self, k: int = 60) -> None:
+        self._k = k
+
+    def fuse(
+        self,
+        query: str,
+        note_candidates: Sequence[RetrievedNote],
+        chunk_candidates: Sequence[RetrievedNote],
+        top_k: int = 5,
+    ) -> list[RetrievedNote]:
+        by_id: dict[int, RetrievedNote] = {}
+        for c in list(chunk_candidates) + list(note_candidates):
+            by_id.setdefault(c.note_id, c)
+        if not by_id:
+            return []
+
+        note_ranking = [c.note_id for c in note_candidates]
+        chunk_ranking = [c.note_id for c in chunk_candidates]
+
+        pool = list(by_id.values())
+        lex_ranking = _lexical_ranking(
+            query,
+            [c.note_id for c in pool],
+            [(c.chunk_text or c.content) for c in pool],
+        )
+
+        scores = fuse_rankings(
+            [note_ranking, chunk_ranking, lex_ranking], k=self._k
+        )
+        ranked = sorted(by_id.values(), key=lambda c: scores.get(c.note_id, 0.0), reverse=True)
+        return ranked[:top_k]
+
+
+class CrossEncoderReranker:
+    """Score query and document jointly with a cross-encoder."""
+
+    name = "cross-encoder"
+    cost_per_query_usd = 0.0  # local model, compute only
+
+    def __init__(self, model_id: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> None:
+        self._model_id = model_id
+        self._model = None
+
+    def _get_model(self):
+        if self._model is None:
+            from sentence_transformers import CrossEncoder
+
+            logger.info("Loading cross-encoder %s", self._model_id)
+            self._model = CrossEncoder(self._model_id, device="cpu")
+        return self._model
+
+    def rerank(
+        self, query: str, candidates: Sequence[RetrievedNote], top_k: int = 5
+    ) -> list[RetrievedNote]:
+        if not candidates:
+            return []
+        model = self._get_model()
+        pairs = [(query, c.chunk_text or c.content) for c in candidates]
+        scores = model.predict(pairs, show_progress_bar=False)
+        ranked = sorted(
+            zip(candidates, scores), key=lambda pair: float(pair[1]), reverse=True
+        )
+        return [c for c, _ in ranked[:top_k]]
+
+
+class GeminiReranker:
+    """Use Gemini as a cross-encoder.
+
+    Sends the query and all candidates in one call and asks for relevance
+    scores, which is far cheaper than one call per candidate and keeps latency
+    to a single round trip. Falls back to the original order if the response
+    cannot be parsed, so a malformed reply degrades to dense ranking rather
+    than to an exception.
+
+    Requires ``GOOGLE_CLOUD_PROJECT`` and application default credentials.
+    Unlike the other two rerankers this one costs money per query.
+    """
+
+    name = "gemini"
+
+    def __init__(
+        self,
+        model: str = "gemini-2.5-flash",
+        project: str | None = None,
+        location: str | None = None,
+    ) -> None:
+        self._model = model
+        self._project = project or os.getenv("GOOGLE_CLOUD_PROJECT")
+        self._location = location or os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from google import genai
+
+            if not self._project:
+                raise RuntimeError(
+                    "GeminiReranker needs GOOGLE_CLOUD_PROJECT and application "
+                    "default credentials."
+                )
+            self._client = genai.Client(
+                vertexai=True, project=self._project, location=self._location
+            )
+        return self._client
+
+    def rerank(
+        self, query: str, candidates: Sequence[RetrievedNote], top_k: int = 5
+    ) -> list[RetrievedNote]:
+        if not candidates:
+            return []
+        from google.genai import types
+
+        listing = "\n\n".join(
+            f"[{i}] {c.title}\n{(c.chunk_text or c.content)[:900]}"
+            for i, c in enumerate(candidates)
+        )
+        prompt = (
+            "Score how well each passage answers the question, from 0 to 10.\n"
+            "10 means the passage directly answers it. 0 means unrelated.\n"
+            "Judge only the passage content, not its length or style.\n\n"
+            f"Question: {query}\n\nPassages:\n{listing}\n\n"
+            "Reply with one line per passage as `index:score`, nothing else."
+        )
+
+        try:
+            response = self._get_client().models.generate_content(
+                model=self._model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                    max_output_tokens=1024,
+                ),
+            )
+            scores = self._parse(response.text or "", len(candidates))
+        except Exception as exc:
+            logger.warning("Gemini rerank failed (%s); keeping dense order.", exc)
+            return list(candidates[:top_k])
+
+        ranked = sorted(
+            zip(candidates, scores), key=lambda pair: pair[1], reverse=True
+        )
+        return [c for c, _ in ranked[:top_k]]
+
+    @staticmethod
+    def _parse(text: str, n: int) -> list[float]:
+        """Parse `index:score` lines, defaulting anything missing to zero."""
+        scores = [0.0] * n
+        for match in re.finditer(r"(\d+)\s*[:=]\s*(\d+(?:\.\d+)?)", text):
+            idx, val = int(match.group(1)), float(match.group(2))
+            if 0 <= idx < n:
+                scores[idx] = val
+        return scores
+
+
+def available() -> dict[str, Callable[[], object]]:
+    """Rerankers the current environment can actually run.
+
+    Gemini is offered only when credentials are configured, so the harness does
+    not fail partway through a run on a machine without cloud access.
+    """
+    registry: dict[str, Callable[[], object]] = {
+        "rrf": RRFReranker,
+        "cross-encoder": CrossEncoderReranker,
+    }
+    if os.getenv("GOOGLE_CLOUD_PROJECT"):
+        registry["gemini"] = GeminiReranker
+    return registry
