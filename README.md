@@ -74,9 +74,12 @@ Retrieval quality is measured, not assumed. **[evals/RESULTS.md](evals/RESULTS.m
 has the numbers**, including what did not help.
 
 Short version: the baseline (whole-note embedding, cosine, top 5) scores
-R@5 0.950 / MRR@10 0.831 on a 120-note corpus with 30 labelled questions.
-Neither chunking nor any reranker beat it by a statistically significant
-margin, so `search_notes` still defaults to that baseline.
+R@5 0.925 / MRR@10 0.814 on a 120-note personal corpus with 40 labelled
+questions. A cross-encoder reranking chunk retrieval is the only change that
+beat it significantly (MRR@10 +0.094, R@1 +0.138, p = 0.04) — but that
+p-value is uncorrected across six compared strategies, and enabling it puts
+PyTorch in the deployed image. `search_notes` therefore still defaults to
+the baseline.
 
 ### Reproducing the eval locally
 
@@ -108,7 +111,7 @@ pip install --index-url https://download.pytorch.org/whl/cpu \
 export SMARTDESK_EMBEDDER=local
 export DATABASE_URL=postgresql+pg8000://smartdesk:smartdesk@127.0.0.1:5432/smartdesk
 
-python evals/ingest.py --reset --title-prefix   # ~4s on CPU
+python evals/ingest.py --reset --title-prefix   # ~9s on CPU
 python evals/harness.py                          # all strategies
 python evals/harness.py --strategies baseline --save baseline
 ```
@@ -143,14 +146,17 @@ python evals/harness.py --save vertex
 |---|---|
 | `baseline` *(default)* | Whole-note vector search — the original behaviour |
 | `chunked` | Chunk-level search, collapsed back to parent notes |
-| `hybrid` | Fuses whole-note, chunk, and BM25 rankings with RRF |
+| `hybrid` | Fuses whole-note, chunk, and BM25 rankings with RRF (~26ms) |
+| `rerank` | Chunk retrieval reranked by a cross-encoder — best measured, ~700ms, needs `sentence-transformers` |
 
 ### Labels need review
 
-The corpus and its 30 question labels are **synthetic and generated**. Every
-question is flagged `reviewed: false` in `evals/questions.jsonl` and the
-harness prints a warning until that changes. Correct any wrong labels and flip
-the flag before treating these numbers as ground truth.
+The corpus and its 40 question labels are **written for this eval, not kept
+at the time**. The threads are real — the four accounts, the hackathons, the
+patent timeline, SmartDesk's own bugs — but the specifics are placeholders.
+Every question is flagged `reviewed: false` in `evals/questions.jsonl` and the
+harness warns until that changes. Correct any wrong labels and flip the flag
+before treating these numbers as ground truth.
 
 ### Tests
 

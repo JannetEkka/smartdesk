@@ -1,13 +1,12 @@
 # Retrieval evaluation results
 
 Measurements for SmartDesk's notes retrieval, run in the order the work was
-done: harness first, then chunking, then reranking. Every number below is
-reproducible with the commands in [README](../README.md#evaluating-retrieval).
+done: harness first, then chunking, then reranking. Reproducible with the
+commands in [README](../README.md#evaluating-retrieval).
 
-**Headline: the baseline is already strong, and nothing tested beat it by a
-statistically significant margin. `search_notes` therefore still defaults to
-the original behaviour.** The alternatives are implemented and switchable, but
-promoting one to default is not justified by this evidence.
+**Headline: a cross-encoder reranking chunk retrieval is the only change that
+beat the baseline significantly — MRR@10 +0.094, R@1 +0.138, p = 0.04. It is
+implemented and switchable, but not the default, for reasons in §5.**
 
 ---
 
@@ -15,22 +14,28 @@ promoting one to default is not justified by this evidence.
 
 | | |
 |---|---|
-| Corpus | 120 notes, 8,899 words (synthetic — see caveats) |
-| Questions | 30, each labelled with the note id(s) that answer it |
+| Corpus | 120 notes, 7,884 words — a personal knowledge base for one user |
+| Questions | 40, each labelled with the note id(s) that answer it |
 | Metrics | recall@k and MRR@k at k = 1, 3, 5, 10 |
 | Embedder | all-MiniLM-L6-v2, 384d (local dev — **not** text-embedding-005) |
 | Database | Postgres 16 + pgvector 0.6.0 |
 | Significance | Paired bootstrap, 10,000 resamples, 95% CI |
 
-`search_notes` returns 5 results, so **R@5 is the column that reflects
-production behaviour**. The harness retrieves 10 so recall@10 is measurable.
+`search_notes` returns 5 results, so **R@5 reflects production behaviour**. The
+harness retrieves 10 so recall@10 is measurable.
+
+The corpus covers what is actually in flight: SmartDesk's own build log and
+bugs, two hackathons on two platforms, job applications, the provisional
+patent timeline, four email accounts and which service is on which, and the
+trading platform accounts. Questions are phrased the way they get asked
+("that time notes search returned nothing at all, what was it?"), not the way
+the notes are written.
 
 ### Why the significance testing matters
 
-With 30 questions, one question is worth 0.033 of recall@1. Most differences
-below are 1–2 questions. Without a confidence interval these read as
-improvements; with one, they read as noise. Every comparison in this document
-that lacks a `*` has a 95% CI spanning zero.
+With 40 questions, one question is worth 0.025 of recall@1. Most differences
+below are 1–3 questions. Without a confidence interval they read as
+improvements; with one, most read as noise.
 
 ---
 
@@ -40,19 +45,14 @@ The original implementation: one embedding per whole note, cosine distance,
 `LIMIT 5`, no chunking, no reranking.
 
 ```
-R@1 0.617   R@3 0.883   R@5 0.950   R@10 0.967
-MRR@1 0.733 MRR@3 0.822 MRR@5 0.831 MRR@10 0.831
+R@1 0.700   R@3 0.875   R@5 0.925   R@10 0.950
+MRR@1 0.725 MRR@3 0.800 MRR@5 0.811 MRR@10 0.814
 ```
 
 Committed at `evals/results/baseline.json`.
 
-**The baseline is good.** R@5 = 0.950 means the correct note is in the returned
-five for 95% of questions, leaving 0.05 of headroom. This is the single most
-important fact in this document: it caps how much any later change can
-possibly win, and it is why the deltas below are small.
-
-MRR@1 (0.733) exceeds R@1 (0.617) because six questions have two relevant
-notes, and recall@1 can be at most 0.5 for those.
+The baseline is already decent — the right note is in the returned five for
+92.5% of questions. That caps how much any change can win.
 
 ---
 
@@ -61,195 +61,203 @@ notes, and recall@1 can be at most 0.5 for those.
 Token-based, sentence-aligned, chunk size 180, overlap 40, chunks linked to
 parent notes by foreign key.
 
-| strategy | R@1 | R@5 | MRR@10 |
-|---|---|---|---|
-| baseline | **0.617** | **0.950** | **0.831** |
-| chunked, naive | 0.583 | 0.933 | 0.797 |
-| chunked, title repeated on later chunks | 0.617 | 0.933 | 0.817 |
+| strategy | R@1 | R@5 | R@10 | MRR@10 |
+|---|---|---|---|---|
+| baseline | **0.700** | **0.925** | 0.950 | **0.814** |
+| chunked | 0.700 | 0.900 | **0.963** | 0.812 |
 
-**Chunking did not improve retrieval on this corpus, and naive chunking made
-it worse.**
+**Chunking on its own changed almost nothing** (MRR@10 −0.003, p = 0.59).
 
-The reason is corpus shape: **only 9 of 120 notes split into more than one
-chunk.** 105 notes are under 100 words. For those, chunking is a no-op by
+The reason is corpus shape: **only 6 of 120 notes split into more than one
+chunk.** 113 notes are under 100 words. For those, chunking is a no-op by
 construction — the note becomes exactly one chunk.
 
-Per-question, chunking changed 6 of 30 questions:
+It does buy a small gain at R@10 (+0.013), consistent with chunks surfacing
+long notes that whole-note embedding buries. But on its own that is one
+question and well inside the noise.
 
-- **1 improved**: q19 ("what went wrong on launch day?"), whose answer is a
-  336-word note. Chunking helped exactly where the theory says it should.
-- **5 regressed**, four of them targeting notes of 57–62 words.
-
-The regression mechanism is worth stating because it is not obvious: chunking
-short notes changes nothing about *those* notes, but splitting the long notes
-produces sharper, more topically focused chunks that then outrank the correct
-short note. Chunking a corpus makes its long documents more competitive
-everywhere, not just on questions about them.
+**Chunking's real value showed up in combination**, not alone — every
+reranker scored better on chunked retrieval than on whole-note retrieval
+(see §4). It provides better *candidates* even when it does not improve the
+final ranking itself.
 
 ### One real bug found
 
 Only the first chunk of a note naturally contains the note title; later chunks
-lost it entirely. Repeating the title on subsequent chunks recovered most of
-the regression (MRR@10 0.797 → 0.817) but still did not reach the baseline's
-0.831. This is `--title-prefix` in `evals/ingest.py`.
-
-### Verdict
-
-Chunking is kept in the codebase, off by default. It is the right mechanism for
-a corpus of long documents and this corpus is not one. If the real note corpus
-skews longer than this synthetic one, re-run before concluding anything — the
-result is a property of the corpus, not of the technique.
+lost it entirely. Repeating the title on subsequent chunks (`--title-prefix`)
+is now the recommended ingest setting.
 
 ---
 
-## 4. Reranking
+## 4. Reranking — the cross-encoder wins
 
 Candidate set of 25, reranked down to the reported cutoffs.
 
-| strategy | R@1 | R@5 | MRR@10 | latency (mean) | cost / 1k queries |
+| strategy | R@1 | R@5 | MRR@10 | latency (mean) | cost / 1k |
 |---|---|---|---|---|---|
-| baseline | 0.617 | **0.950** | 0.831 | 16 ms | $0 |
-| hybrid-rrf | **0.667** | 0.883 | **0.834** | 45 ms | $0 |
-| chunked+rrf | 0.633 | 0.883 | 0.818 | 13 ms | $0 |
-| chunked+cross-encoder | 0.633 | 0.917 | 0.820 | 490 ms | $0 (local CPU) |
-| baseline+rrf | 0.583 | 0.867 | 0.786 | 6 ms | $0 |
-| baseline+cross-encoder | 0.533 | 0.900 | 0.758 | 1,767 ms | $0 (local CPU) |
-| **gemini** | *unmeasured* | | | ~1 network RTT | **~$1.18** |
+| baseline | 0.700 | 0.925 | 0.814 | 22 ms | $0 |
+| chunked | 0.700 | 0.900 | 0.812 | 13 ms | $0 |
+| baseline+rrf | 0.750 | 0.925 | 0.843 | **5 ms** | $0 |
+| hybrid-rrf | 0.750 | 0.925 | 0.843 | 26 ms | $0 |
+| chunked+rrf | 0.775 | 0.938 | 0.861 | 16 ms | $0 |
+| baseline+cross-encoder | 0.725 | 0.925 | 0.839 | 1,976 ms | $0 |
+| **chunked+cross-encoder** | **0.838** | **0.950** | **0.908** | 699 ms | $0 |
+| gemini | *unmeasured* | | | ~1 RTT | ~$1.18 |
 
 ### Paired bootstrap vs baseline
 
 ```
-recall@5                delta     95% CI              p      better/worse
-  hybrid-rrf            -0.067   [-0.150, +0.000]   0.12   0/3
-  chunked+rrf           -0.067   [-0.150, +0.000]   0.12   0/3
-  baseline+rrf          -0.083   [-0.167, -0.017]   0.06   0/4
-  chunked+cross-enc     -0.033   [-0.083, +0.000]   0.27   0/2
-
 rr@10                   delta     95% CI              p      better/worse
-  hybrid-rrf            +0.004   [-0.109, +0.106]   0.95   5/2
-  chunked+rrf           -0.013   [-0.143, +0.109]   0.85   5/4
-  baseline+cross-enc    -0.072   [-0.202, +0.051]   0.26   5/7
+  chunked+cross-enc    +0.094   [+0.012, +0.186]   0.04   8/2   *
+  chunked+rrf          +0.047   [-0.019, +0.117]   0.18   7/2
+  hybrid-rrf           +0.028   [-0.031, +0.093]   0.37   6/2
+  baseline+rrf         +0.028   [-0.050, +0.113]   0.51   6/4
+  baseline+cross-enc   +0.024   [-0.088, +0.136]   0.67   8/7
+  chunked             -0.003   [-0.013, +0.007]   0.59   1/2
+
+recall@5                delta     95% CI              p      better/worse
+  chunked+cross-enc    +0.025   [-0.050, +0.125]   0.76   2/1
+  chunked+rrf          +0.013   [-0.062, +0.087]   0.87   2/1
+  chunked             -0.025   [-0.075, +0.000]   0.63   0/1
 ```
 
-**No strategy is significantly better than baseline on any metric.** The
-closest thing to a signal is that `hybrid-rrf` improves 5 questions and
-regresses 2 on MRR@10 — a favourable ratio, but a delta of +0.004 with a CI
-almost 30x wider than the effect.
+**`chunked+cross-encoder` is the only strategy whose CI excludes zero.** The
+effect is large: R@1 +0.138 is 5.5 questions out of 40, and 8 questions
+improved against 2 regressed.
 
-Every reranker *lowers* R@5. Reranking reorders 25 candidates and returns the
-top few; a relevant note that dense retrieval had at rank 4 can be pushed past
-the cutoff. When the baseline ordering is already 95% correct at k=5, a
-reranker has far more to lose than to gain.
+### Honest caveat on that p-value
 
-### Recommendation: `hybrid-rrf`, if any
+**p = 0.04 is uncorrected for multiple comparisons.** Six strategies were
+compared against the baseline; with six tests, a p-value below 0.05 arising by
+chance is not unlikely. A Bonferroni-corrected threshold would be ~0.008,
+which this does not clear.
 
-Fuses three rankings — whole-note dense, chunk dense, and BM25 — with
-reciprocal rank fusion. Chosen over the alternatives because:
+The result is the strongest evidence in this document, and it is not
+conclusive. What raises confidence beyond the p-value alone: the effect size
+is large rather than marginal, the win/loss ratio is 8/2, and the direction is
+consistent across every cutoff and both metrics.
 
-- It is the only strategy that improves the top of the ranking (R@1 +0.050,
-  MRR@1 +0.033), which is what an LLM reads most heavily.
-- It is free and adds ~29 ms, versus 490–1,767 ms for the cross-encoder.
-- Its three signals fail differently: embeddings handle paraphrase, BM25
-  handles rare exact terms (names, error strings), chunks handle long notes.
+### This reverses an earlier conclusion
 
-**But it is shipped off by default** (`SMARTDESK_RETRIEVAL=hybrid` to enable),
-because "best of several statistically indistinguishable options" is not
-grounds for changing production behaviour.
+An earlier version of this corpus described a fictional company — team
+standups, client meetings, dashboard redesigns. On that corpus the same
+cross-encoder was the **worst** option, scoring below baseline on every metric.
+On this corpus it is the best by a clear margin.
 
-### The cross-encoder was the worst option
+Nothing about the model changed. `ms-marco-MiniLM-L-6-v2` is trained on
+web-search passages, and this corpus — technical notes about bugs, decisions
+and how things work, queried with direct questions — sits much closer to that
+distribution than meeting minutes about a fictional product did.
 
-`ms-marco-MiniLM-L-6-v2` was worse than baseline on every metric *and* 30–110x
-slower. It is trained on MS MARCO web-search passages; meeting notes are a
-different domain, and a 6-layer model has little capacity to bridge that.
-
-**This does not predict how Gemini would do.** A domain-mismatched 22M-parameter
-cross-encoder failing says nothing about a frontier model. Do not read the
-cross-encoder row as evidence against LLM reranking.
+**The lesson is that reranker choice is a property of your corpus, not a
+general fact.** Any conclusion here transfers only to notes that look like
+these. This is also a concrete argument for the harness existing at all: the
+wrong corpus produced a confidently wrong recommendation.
 
 ---
 
-## 5. Gemini reranking — implemented, not measured
+## 5. Why it is not the default
+
+`SMARTDESK_RETRIEVAL=rerank` enables it. The default stays `baseline` because:
+
+1. **The p-value does not survive multiple-comparison correction** (above).
+2. **It adds torch to the deployed image.** `sentence-transformers` pulls
+   PyTorch, several hundred MB. The Cloud Run image was deliberately cut from
+   1.8 GB to 340 MB to fix 8–12 second cold starts. Adding torch undoes that
+   for a single-user tool that is idle most of the time.
+3. **699 ms per search**, against 22 ms for the baseline and 16 ms for
+   `chunked+rrf`.
+4. **The labels are unreviewed.** Everything rests on 40 generated labels.
+
+**If you want a ranking improvement without the image cost, use
+`chunked+rrf`**: MRR@10 +0.047, 16 ms, no new dependency, pure Python. It is
+not statistically significant either, but it is free in every sense.
+
+**The better long-term answer is probably the Gemini reranker** — same
+cross-encoder idea, no torch in the image, at ~$1.18 per 1,000 searches. It is
+implemented and unmeasured (§6).
+
+---
+
+## 6. Gemini reranking — implemented, not measured
 
 `GeminiReranker` is complete and registers itself when `GOOGLE_CLOUD_PROJECT`
-is set. It was **not run**, because this environment has no GCP credentials and
-running it would have incurred cost without approval.
+is set. It was **not run**: this environment has no GCP credentials and running
+it would have incurred cost without approval.
 
-Measured prompt size over the 30 eval questions at 25 candidates:
+Measured prompt size over the eval questions at 25 candidates:
 
 | | |
 |---|---|
 | Input | ~2,674 tokens mean, 3,179 max |
-| Output | ~150 tokens (25 lines of `index:score`) |
+| Output | ~150 tokens |
 | Cost per 1,000 queries | **~$1.18** ($0.80 input + $0.38 output) |
-| Cost for one full eval run | ~$0.04 |
+| Cost for one full eval run | ~$0.05 |
 
 At Gemini 2.5 Flash pricing of $0.30/M input and $2.50/M output. Token counts
-use the MiniLM tokenizer as a proxy, so treat them as within ~20%.
-
-To measure it:
+use the MiniLM tokenizer as a proxy — treat as within ~20%.
 
 ```bash
 export GOOGLE_CLOUD_PROJECT=<project> SMARTDESK_EMBEDDER=vertex
 python evals/harness.py --strategies baseline chunked+gemini --save gemini
 ```
 
----
-
-## 6. What did not help
-
-Collected explicitly, because the null results are the useful part:
-
-1. **Chunking**, on this corpus. Helped 1 question, hurt 5. Only 9 of 120 notes
-   were long enough to split at all.
-2. **Every reranker, on recall@5.** All lowered it. Reranking has more to lose
-   than gain against an already-strong ordering.
-3. **The local cross-encoder**, on everything. Worse accuracy and 30–110x the
-   latency.
-4. **Excluding zero-BM25 documents from the lexical ranking.** This started as
-   a genuine bug fix — documents sharing no query term were being handed
-   lexical ranks by sort order alone, letting a note with no match outscore a
-   real one. Fixing it *lowered* `hybrid-rrf` from MRR@10 0.872 to 0.834. The
-   fix is principled and was kept; the pre-fix numbers are preserved in
-   `results/all_strategies.json` against post-fix `results/final.json`. Both
-   deltas are inside the noise band, so neither version is demonstrably better
-   — which is itself the point. A 30-question eval cannot adjudicate this.
-5. **Retrieving a wider candidate set** (25 vs 10) did not help on its own; it
-   only matters in combination with a reranker good enough to exploit it.
+Given the local cross-encoder's result, this is the most valuable remaining
+measurement: it would likely match or beat it without the image-size cost.
 
 ---
 
-## 7. Caveats — read before trusting any number above
+## 7. What did not help
 
-1. **Wrong embedder.** Everything is measured with all-MiniLM-L6-v2 (384d), not
+1. **Chunking alone.** MRR@10 −0.003. Only 6 of 120 notes were long enough to
+   split. It earns its place as a *candidate generator* for rerankers, not as
+   a retrieval improvement in itself.
+2. **Reranking whole-note candidates.** `baseline+cross-encoder` gained almost
+   nothing (+0.024, p = 0.67) and cost 1,976 ms. The same reranker on chunked
+   candidates gained +0.094 at a third of the latency. Candidate quality
+   mattered more than the reranker.
+3. **Fusing three signals instead of two.** `hybrid-rrf` (dense + chunk +
+   BM25) scored identically to `baseline+rrf` (dense + BM25) — MRR@10 0.843
+   for both — while being 5x slower. The third signal added nothing.
+4. **Excluding zero-BM25 documents from the lexical ranking.** A genuine bug
+   fix — documents sharing no query term were being handed lexical ranks by
+   sort order alone. On the previous corpus it *lowered* scores. Kept because
+   it is correct, not because it helped.
+
+---
+
+## 8. Caveats — read before trusting any number
+
+1. **Wrong embedder.** Measured with all-MiniLM-L6-v2 (384d), not
    text-embedding-005 (768d), because this environment has no Vertex
-   credentials. Relative orderings may not transfer. Re-run with
-   `SMARTDESK_EMBEDDER=vertex` before making decisions.
-2. **Synthetic corpus.** The 120 notes were generated, not real. The original
-   corpus had 5 notes, which makes recall@5 100% by construction and every
-   metric here degenerate — hence the synthetic set.
-3. **Unreviewed labels.** All 30 questions are flagged `reviewed: false`. They
-   were written against the notes and are believed correct, but they have not
-   been human-verified. The harness prints a warning until they are. Wrong
-   labels corrupt every number silently.
-4. **n = 30.** One question is worth 0.033 of recall@1. This eval can detect
-   large effects and nothing else. Detecting a 2-point improvement reliably
-   needs roughly 300 questions.
-5. **Do not tune on this set.** Any parameter chosen by maximising these 30
-   questions is overfitting. A held-out set is needed before tuning RRF
-   weights, chunk sizes, or candidate depth.
+   credentials. Re-run with `SMARTDESK_EMBEDDER=vertex` before deciding
+   anything. The cross-encoder result in particular may shift, since a
+   stronger embedder produces better candidates and leaves less for a
+   reranker to fix.
+2. **Synthetic notes.** The corpus reflects real threads — the accounts, the
+   hackathons, the patent timeline, SmartDesk's actual bugs — but the notes
+   were written for this eval, not kept at the time. Specifics are
+   placeholders. Replacing them with real notes is the single highest-value
+   change available.
+3. **Unreviewed labels.** All 40 questions are flagged `reviewed: false`. The
+   harness warns until that changes. Wrong labels corrupt every number here
+   silently.
+4. **n = 40, and 6 strategies compared.** One question is worth 0.025 of
+   recall@1. The one significant result does not survive multiple-comparison
+   correction.
+5. **Do not tune on this set.** Any parameter chosen by maximising these 40
+   questions is overfitting. Tuning needs a held-out set.
 
 ---
 
-## 8. What would actually move the numbers
+## 9. What would actually move the numbers
 
-In order of expected value:
-
-1. **Real notes and reviewed labels.** Every conclusion here is provisional
-   until the corpus is real. This is the whole ballgame.
-2. **More questions.** 30 cannot resolve the effects being chased. 200–300
-   would.
-3. **Re-run on text-embedding-005.** One command; changes which conclusions
-   hold.
-4. **Then, and only then**, tune. Chunk size, overlap, RRF weights and
-   candidate depth are all unexplored, and exploring them now would just fit
-   noise.
+1. **Real notes, reviewed labels.** Everything else is provisional until then.
+2. **Measure the Gemini reranker.** Likely matches the cross-encoder without
+   putting torch in the deployed image. ~$0.05 to find out.
+3. **Re-run on text-embedding-005.** One command; may change which
+   conclusions hold.
+4. **More questions.** 40 cannot separate strategies 2–4 in the table.
+   200–300 would.
+5. **Then tune** — chunk size, overlap, candidate depth. Not before, and not
+   on this set.
