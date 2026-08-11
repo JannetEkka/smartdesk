@@ -103,8 +103,20 @@ def ingest_notes(rows: list[dict], embedder) -> None:
     db.execute("SELECT setval('notes_id_seq', (SELECT MAX(id) FROM notes));")
 
 
-def ingest_chunks(rows: list[dict], embedder, chunk_size: int, overlap: int) -> dict:
-    """Chunk every note and embed the chunks (the chunked index)."""
+def ingest_chunks(
+    rows: list[dict],
+    embedder,
+    chunk_size: int,
+    overlap: int,
+    title_prefix: bool = False,
+) -> dict:
+    """Chunk every note and embed the chunks (the chunked index).
+
+    ``title_prefix`` repeats the note title at the start of every chunk. Only
+    the first chunk of a note naturally contains the title, so later chunks
+    otherwise lose that signal entirely — a known weakness of naive chunking.
+    Whether repeating it helps is an empirical question, so it is a flag.
+    """
     tokenizer = get_tokenizer()
     db.execute("DELETE FROM note_chunks;")
 
@@ -112,7 +124,10 @@ def ingest_chunks(rows: list[dict], embedder, chunk_size: int, overlap: int) -> 
     for row in rows:
         text = f"{row['title']}\n{row['content']}"
         for chunk in chunk_text(text, chunk_size, overlap, tokenizer):
-            pending.append((row["id"], chunk.index, chunk.text, chunk.token_count))
+            body = chunk.text
+            if title_prefix and chunk.index > 0:
+                body = f"{row['title']}\n{body}"
+            pending.append((row["id"], chunk.index, body, chunk.token_count))
 
     start = time.perf_counter()
     vectors = embedder.embed_documents([c[2] for c in pending])
@@ -155,6 +170,11 @@ def main() -> int:
     parser.add_argument("--chunk-size", type=int, default=180, help="tokens per chunk")
     parser.add_argument("--overlap", type=int, default=40, help="tokens of overlap")
     parser.add_argument(
+        "--title-prefix",
+        action="store_true",
+        help="repeat the note title at the start of every chunk after the first",
+    )
+    parser.add_argument(
         "--reset",
         action="store_true",
         help="drop and recreate tables first (development databases only)",
@@ -192,7 +212,9 @@ def main() -> int:
     ingest_notes(rows, embedder)
 
     print(f"Ingesting chunks (size={args.chunk_size}, overlap={args.overlap})...")
-    stats = ingest_chunks(rows, embedder, args.chunk_size, args.overlap)
+    stats = ingest_chunks(
+        rows, embedder, args.chunk_size, args.overlap, args.title_prefix
+    )
     print(
         f"  {stats['chunks']} chunks across {stats['notes']} notes "
         f"({stats['notes_with_multiple_chunks']} notes split into >1 chunk, "

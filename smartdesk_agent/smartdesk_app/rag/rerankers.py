@@ -134,6 +134,73 @@ class RRFReranker:
         return list(fused[:top_k])
 
 
+def fuse_rankings(
+    rankings: Sequence[Sequence[int]], k: int = 60, weights: Sequence[float] | None = None
+) -> dict[int, float]:
+    """Reciprocal rank fusion over several rankings of note ids.
+
+    Returns a mapping of note id to fused score. Ids missing from a ranking
+    simply contribute nothing from it, which is the behaviour that lets this
+    combine rankings over different candidate sets.
+    """
+    weights = list(weights) if weights else [1.0] * len(rankings)
+    scores: dict[int, float] = {}
+    for ranking, weight in zip(rankings, weights):
+        for position, note_id in enumerate(ranking, start=1):
+            scores[note_id] = scores.get(note_id, 0.0) + weight * _rrf(position, k)
+    return scores
+
+
+class HybridFusionReranker:
+    """Fuse whole-note dense, chunk dense, and lexical rankings.
+
+    The three signals fail differently. Whole-note embeddings capture what a
+    note is broadly about. Chunk embeddings capture specific passages inside
+    long notes. BM25 catches rare exact terms that embeddings smooth away.
+    Fusing all three keeps the recall of the union while letting agreement
+    between signals decide the order.
+
+    Unlike the other rerankers this one needs both candidate lists, so it is
+    driven by the harness rather than by the generic rerank() path.
+    """
+
+    name = "hybrid-rrf"
+    cost_per_query_usd = 0.0
+
+    def __init__(self, k: int = 60) -> None:
+        self._k = k
+
+    def fuse(
+        self,
+        query: str,
+        note_candidates: Sequence[RetrievedNote],
+        chunk_candidates: Sequence[RetrievedNote],
+        top_k: int = 5,
+    ) -> list[RetrievedNote]:
+        by_id: dict[int, RetrievedNote] = {}
+        for c in list(chunk_candidates) + list(note_candidates):
+            by_id.setdefault(c.note_id, c)
+        if not by_id:
+            return []
+
+        note_ranking = [c.note_id for c in note_candidates]
+        chunk_ranking = [c.note_id for c in chunk_candidates]
+
+        pool = list(by_id.values())
+        texts = [(c.chunk_text or c.content) for c in pool]
+        lex = bm25_scores(query, texts)
+        lex_ranking = [
+            pool[i].note_id
+            for i in sorted(range(len(pool)), key=lambda i: lex[i], reverse=True)
+        ]
+
+        scores = fuse_rankings(
+            [note_ranking, chunk_ranking, lex_ranking], k=self._k
+        )
+        ranked = sorted(by_id.values(), key=lambda c: scores.get(c.note_id, 0.0), reverse=True)
+        return ranked[:top_k]
+
+
 class CrossEncoderReranker:
     """Score query and document jointly with a cross-encoder."""
 

@@ -113,6 +113,87 @@ def evaluate(
     )
 
 
+def paired_bootstrap(
+    a: EvalResult,
+    b: EvalResult,
+    metric: str,
+    iterations: int = 10000,
+    seed: int = 12345,
+) -> dict:
+    """Paired bootstrap of ``a - b`` on a per-query metric.
+
+    With 30 questions, one question is worth 0.033 of recall@1, so raw deltas
+    of that size are indistinguishable from noise. Resampling the *paired*
+    per-query differences gives a confidence interval that says so explicitly,
+    and a two-sided p-value for whether the difference is real.
+
+    Pairing matters: both strategies answer the same questions, so comparing
+    per-question differences removes the variance from questions simply being
+    easy or hard.
+    """
+    import random
+
+    by_id_a = {r["question_id"]: r[metric] for r in a.per_query}
+    by_id_b = {r["question_id"]: r[metric] for r in b.per_query}
+    shared = sorted(set(by_id_a) & set(by_id_b))
+    diffs = [by_id_a[q] - by_id_b[q] for q in shared]
+    n = len(diffs)
+    if n == 0:
+        return {"delta": 0.0, "ci_low": 0.0, "ci_high": 0.0, "p_value": 1.0, "n": 0}
+
+    observed = sum(diffs) / n
+    rng = random.Random(seed)
+    means = []
+    for _ in range(iterations):
+        sample = [diffs[rng.randrange(n)] for _ in range(n)]
+        means.append(sum(sample) / n)
+    means.sort()
+
+    lo = means[int(0.025 * iterations)]
+    hi = means[int(0.975 * iterations)]
+    # Two-sided p-value by recentring the bootstrap distribution on zero.
+    centred = [m - observed for m in means]
+    extreme = sum(1 for c in centred if abs(c) >= abs(observed))
+    return {
+        "delta": observed,
+        "ci_low": lo,
+        "ci_high": hi,
+        "p_value": extreme / iterations,
+        "n": n,
+        "n_better": sum(1 for d in diffs if d > 0),
+        "n_worse": sum(1 for d in diffs if d < 0),
+    }
+
+
+def format_significance(
+    results: Sequence[EvalResult], baseline: EvalResult, metrics: Sequence[str] = ("recall@5", "rr@10")
+) -> str:
+    """Table of paired bootstrap comparisons against the baseline."""
+    lines = [
+        f"Paired bootstrap vs '{baseline.name}' (10k resamples, 95% CI)",
+        "",
+    ]
+    name_w = max(len(r.name) for r in results) + 2
+    for metric in metrics:
+        lines.append(f"  {metric}")
+        header = "    " + "strategy".ljust(name_w) + "  delta     95% CI              p      w/l"
+        lines.append(header)
+        lines.append("    " + "-" * (len(header) - 4))
+        for r in results:
+            if r is baseline:
+                continue
+            s = paired_bootstrap(r, baseline, metric)
+            verdict = "" if s["p_value"] >= 0.05 else "  *"
+            lines.append(
+                f"    {r.name.ljust(name_w)}  {s['delta']:+.3f}   "
+                f"[{s['ci_low']:+.3f}, {s['ci_high']:+.3f}]   "
+                f"{s['p_value']:.2f}   {s['n_better']}/{s['n_worse']}{verdict}"
+            )
+        lines.append("")
+    lines.append("  * = p < 0.05.  w/l = questions improved / regressed.")
+    return "\n".join(lines)
+
+
 def format_table(results: Sequence[EvalResult], baseline: EvalResult | None = None) -> str:
     """Render results as a fixed-width table, with deltas against a baseline."""
     if not results:

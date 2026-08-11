@@ -33,7 +33,7 @@ from rag import db, rerankers  # noqa: E402
 from rag.embeddings import get_embedder  # noqa: E402
 from rag.retrieval import retrieve_chunks, retrieve_notes  # noqa: E402
 
-from metrics import EvalResult, evaluate, format_table  # noqa: E402
+from metrics import EvalResult, evaluate, format_significance, format_table  # noqa: E402
 
 QUESTIONS = REPO_ROOT / "evals" / "questions.jsonl"
 RESULTS_DIR = REPO_ROOT / "evals" / "results"
@@ -86,10 +86,19 @@ def _make_reranked(reranker, source: str):
     return run
 
 
+def _hybrid(question: str, qvec: list[float]) -> list[int]:
+    """Fuse whole-note dense, chunk dense, and lexical rankings."""
+    notes = retrieve_notes(question, k=RERANK_CANDIDATES, query_vector=qvec)
+    chunks = retrieve_chunks(question, k=RERANK_CANDIDATES, query_vector=qvec)
+    fused = rerankers.HybridFusionReranker().fuse(question, notes, chunks, top_k=MAX_K)
+    return [r.note_id for r in fused]
+
+
 def build_strategies(selected: list[str] | None) -> dict:
     available = {
         "baseline": _baseline,
         "chunked": _chunked,
+        "hybrid-rrf": _hybrid,
     }
     for name, factory in rerankers.available().items():
         for source in ("baseline", "chunked"):
@@ -164,6 +173,9 @@ def main() -> int:
 
     baseline = next((r for r in results if r.name == args.baseline_name), None)
     print(format_table(results, baseline))
+    if baseline is not None and len(results) > 1:
+        print()
+        print(format_significance(results, baseline))
     print()
     print("latency per query (ms):")
     for r in results:
