@@ -97,6 +97,20 @@ def _rrf(rank: int, k: int = 60) -> float:
     return 1.0 / (k + rank)
 
 
+def _lexical_ranking(query: str, ids: Sequence[int], texts: Sequence[str]) -> list[int]:
+    """Rank ids by BM25, dropping anything that scores zero.
+
+    Documents sharing no query term carry no lexical evidence. Leaving them in
+    the ranking would hand them a position — and therefore an RRF
+    contribution — purely from sort order, which lets a note with no match
+    outscore a genuine one. Only documents with a non-zero score participate.
+    """
+    scores = bm25_scores(query, texts)
+    matching = [i for i in range(len(ids)) if scores[i] > 0]
+    matching.sort(key=lambda i: scores[i], reverse=True)
+    return [ids[i] for i in matching]
+
+
 class RRFReranker:
     """Fuse the dense ranking with a BM25 ranking.
 
@@ -120,18 +134,20 @@ class RRFReranker:
         # Dense ranking is the order the retriever returned.
         dense_rank = {c.note_id: i + 1 for i, c in enumerate(candidates)}
 
-        texts = [(c.chunk_text or c.content) for c in candidates]
-        lex = bm25_scores(query, texts)
-        order = sorted(range(len(candidates)), key=lambda i: lex[i], reverse=True)
-        lex_rank = {candidates[i].note_id: pos + 1 for pos, i in enumerate(order)}
-
-        fused = sorted(
-            candidates,
-            key=lambda c: _rrf(dense_rank[c.note_id], self._k)
-            + _rrf(lex_rank[c.note_id], self._k),
-            reverse=True,
+        lex_ranking = _lexical_ranking(
+            query,
+            [c.note_id for c in candidates],
+            [(c.chunk_text or c.content) for c in candidates],
         )
-        return list(fused[:top_k])
+        lex_rank = {note_id: pos + 1 for pos, note_id in enumerate(lex_ranking)}
+
+        def score(c: RetrievedNote) -> float:
+            total = _rrf(dense_rank[c.note_id], self._k)
+            if c.note_id in lex_rank:
+                total += _rrf(lex_rank[c.note_id], self._k)
+            return total
+
+        return sorted(candidates, key=score, reverse=True)[:top_k]
 
 
 def fuse_rankings(
@@ -187,12 +203,11 @@ class HybridFusionReranker:
         chunk_ranking = [c.note_id for c in chunk_candidates]
 
         pool = list(by_id.values())
-        texts = [(c.chunk_text or c.content) for c in pool]
-        lex = bm25_scores(query, texts)
-        lex_ranking = [
-            pool[i].note_id
-            for i in sorted(range(len(pool)), key=lambda i: lex[i], reverse=True)
-        ]
+        lex_ranking = _lexical_ranking(
+            query,
+            [c.note_id for c in pool],
+            [(c.chunk_text or c.content) for c in pool],
+        )
 
         scores = fuse_rankings(
             [note_ranking, chunk_ranking, lex_ranking], k=self._k

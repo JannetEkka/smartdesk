@@ -52,6 +52,20 @@ class RetrievedNote:
         return out
 
 
+def _resolve_query_vector(
+    query: str, query_vector: list[float] | None, embedder: Embedder | None
+) -> list[float]:
+    """Return the query embedding, only constructing an embedder if needed.
+
+    A caller that supplies ``query_vector`` should not need credentials for an
+    embedding provider it never uses — which matters for tests and for reusing
+    one embedding across several retrieval strategies.
+    """
+    if query_vector is not None:
+        return query_vector
+    return (embedder or get_embedder()).embed_query(query)
+
+
 def retrieve_notes(
     query: str,
     k: int = 5,
@@ -64,8 +78,7 @@ def retrieve_notes(
     ``query_vector`` lets a caller reuse an embedding it already computed,
     which keeps the eval harness from paying for the same query twice.
     """
-    embedder = embedder or get_embedder()
-    vec = query_vector if query_vector is not None else embedder.embed_query(query)
+    vec = _resolve_query_vector(query, query_vector, embedder)
 
     rows = db.query(
         """
@@ -108,8 +121,7 @@ def retrieve_chunks(
     ``fetch_multiplier`` over-fetches chunks so that after collapsing there are
     still k distinct notes to return.
     """
-    embedder = embedder or get_embedder()
-    vec = query_vector if query_vector is not None else embedder.embed_query(query)
+    vec = _resolve_query_vector(query, query_vector, embedder)
 
     rows = db.query(
         """
