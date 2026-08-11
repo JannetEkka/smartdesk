@@ -52,8 +52,8 @@ smartdesk/
 │           └── rerankers.py         # BM25, RRF fusion, cross-encoder, Gemini
 ├── evals/
 │   ├── RESULTS.md             # Measured results and what did NOT help
-│   ├── corpus/notes.jsonl     # 120-note synthetic eval corpus
-│   ├── questions.jsonl        # 30 labelled questions
+│   ├── corpus/notes.jsonl     # 120-note personal eval corpus
+│   ├── questions.jsonl        # 40 labelled questions
 │   ├── ingest.py              # Load corpus, build both indexes
 │   ├── harness.py             # Run strategies, print comparison table
 │   ├── metrics.py             # recall@k, MRR@k, paired bootstrap
@@ -136,7 +136,7 @@ python evals/harness.py --save vertex
 ```
 
 > This calls Vertex AI and bills your project. Embedding the corpus is a
-> fraction of a cent; a full harness run including Gemini reranking is ~$0.04.
+> fraction of a cent; a full harness run including Gemini reranking is ~$0.05.
 
 ### Retrieval modes
 
