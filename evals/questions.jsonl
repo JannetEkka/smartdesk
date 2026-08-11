@@ -1,0 +1,30 @@
+{"id": "q01", "question": "why did staging go down in march?", "relevant_note_ids": [8], "reviewed": false, "note": "distractors: notes 2 and 6 mention the SSL issue but do not explain the cause"}
+{"id": "q02", "question": "what did we do about the slow first request after the app sits idle?", "relevant_note_ids": [9], "reviewed": false}
+{"id": "q03", "question": "how much is the database costing us and what did we do to cut it?", "relevant_note_ids": [24, 51], "reviewed": false, "note": "24 has the spend breakdown, 51 is where the overnight shutdown was raised"}
+{"id": "q04", "question": "what are our pricing tiers?", "relevant_note_ids": [25, 26], "reviewed": false, "note": "26 supersedes 25; a recency-aware ranker should prefer 26"}
+{"id": "q05", "question": "why did finance push back on the pricing proposal?", "relevant_note_ids": [26], "reviewed": false}
+{"id": "q06", "question": "when does the intern start and what are the terms?", "relevant_note_ids": [21], "reviewed": false, "note": "5 is the interview and mentions a July 1 start but not the terms"}
+{"id": "q07", "question": "did we decide to add an index to the vector column?", "relevant_note_ids": [16], "reviewed": false}
+{"id": "q08", "question": "which embedding model are we using and why that one?", "relevant_note_ids": [17], "reviewed": false}
+{"id": "q09", "question": "how did we stop the assistant replying to the same question twice?", "relevant_note_ids": [48], "reviewed": false}
+{"id": "q10", "question": "what was the worst security problem we found this year?", "relevant_note_ids": [56], "reviewed": false, "note": "103 also references it in passing; 56 is the note that describes it"}
+{"id": "q11", "question": "where do we keep google oauth tokens now?", "relevant_note_ids": [55, 31], "reviewed": false, "note": "31 recommended the change, 55 is the migration"}
+{"id": "q12", "question": "what came out of the penetration test?", "relevant_note_ids": [89], "reviewed": false}
+{"id": "q13", "question": "why did we move off datadog and what did we pick?", "relevant_note_ids": [29, 30], "reviewed": false}
+{"id": "q14", "question": "what caused all those pages in the middle of the night?", "relevant_note_ids": [78], "reviewed": false}
+{"id": "q15", "question": "there was a time notes search returned nothing at all, what happened?", "relevant_note_ids": [79], "reviewed": false}
+{"id": "q16", "question": "did techcorp ever hit their latency target at higher data volume?", "relevant_note_ids": [39, 71], "reviewed": false, "note": "39 missed the target at 10x, 71 is where it was met after denormalisation"}
+{"id": "q17", "question": "what was the problem with startupx single sign on?", "relevant_note_ids": [58, 59], "reviewed": false}
+{"id": "q18", "question": "why did we lose meridian?", "relevant_note_ids": [96, 97], "reviewed": false}
+{"id": "q19", "question": "what went wrong on launch day?", "relevant_note_ids": [106], "reviewed": false}
+{"id": "q20", "question": "who do i escalate to if i am on call and stuck?", "relevant_note_ids": [45], "reviewed": false}
+{"id": "q21", "question": "what does someone need before they get production access?", "relevant_note_ids": [76], "reviewed": false}
+{"id": "q22", "question": "what is the rule about feature flags nobody turns on?", "relevant_note_ids": [100], "reviewed": false, "note": "94 is the retro that prompted the policy"}
+{"id": "q23", "question": "did the runbooks actually work when we tested them?", "relevant_note_ids": [54], "reviewed": false}
+{"id": "q24", "question": "why are we measuring retrieval before improving it?", "relevant_note_ids": [80, 107], "reviewed": false}
+{"id": "q25", "question": "how should we be splitting long documents for search?", "relevant_note_ids": [41, 107], "reviewed": false}
+{"id": "q26", "question": "what are the options for reordering search results?", "relevant_note_ids": [42], "reviewed": false, "note": "116 covers hybrid lexical search which is adjacent but a different question"}
+{"id": "q27", "question": "was the internship worth it, what did she actually deliver?", "relevant_note_ids": [114], "reviewed": false, "note": "110 is the mid-internship 1:1"}
+{"id": "q28", "question": "if search returns a chunk how does the user know which note it came from?", "relevant_note_ids": [111], "reviewed": false}
+{"id": "q29", "question": "what do we use for load testing and why did we change?", "relevant_note_ids": [84], "reviewed": false}
+{"id": "q30", "question": "how does the team handle design requests coming in over chat?", "relevant_note_ids": [77], "reviewed": false, "note": "75 is where Sneha raised the problem"}
