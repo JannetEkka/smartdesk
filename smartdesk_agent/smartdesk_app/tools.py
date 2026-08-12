@@ -184,11 +184,15 @@ def _query_db(sql: str, params: dict = None) -> list[dict]:
 # Retrieval mode, selected with SMARTDESK_RETRIEVAL:
 #   baseline  whole-note vector search (default — matches the original tool)
 #   chunked   chunk-level search collapsed back to parent notes
-#   hybrid    fuses whole-note, chunk, and lexical rankings
+#   hybrid    fuses whole-note, chunk, and lexical rankings (free, ~26ms)
+#   rerank    chunk retrieval reranked by a cross-encoder (best measured,
+#             ~700ms, and pulls in sentence-transformers/torch)
 #
-# The default is deliberately the original behaviour. On the eval set no
-# alternative beat it by a statistically significant margin, so promoting one
-# to default is not justified by the evidence. See evals/RESULTS.md.
+# The default stays baseline. `rerank` is the only mode that beat it
+# significantly on the eval set (MRR@10 +0.094, p=0.04), but that p-value is
+# uncorrected across six compared strategies, and enabling it adds torch to
+# the deployed image — which is what the cold-start work removed. See
+# evals/RESULTS.md before switching.
 _RETRIEVAL_MODE = os.getenv("SMARTDESK_RETRIEVAL", "baseline").lower()
 
 _SEARCH_LIMIT = int(os.getenv("SMARTDESK_SEARCH_LIMIT", "5"))
@@ -217,6 +221,11 @@ def search_notes(tool_context: ToolContext, query: str) -> list[dict]:
             chunks = retrieve_chunks(query, k=_HYBRID_CANDIDATES)
             hits = rerankers.HybridFusionReranker().fuse(
                 query, notes, chunks, top_k=_SEARCH_LIMIT
+            )
+        elif _RETRIEVAL_MODE == "rerank":
+            candidates = retrieve_chunks(query, k=_HYBRID_CANDIDATES)
+            hits = rerankers.CrossEncoderReranker().rerank(
+                query, candidates, top_k=_SEARCH_LIMIT
             )
         elif _RETRIEVAL_MODE == "chunked":
             hits = retrieve_chunks(query, k=_SEARCH_LIMIT)

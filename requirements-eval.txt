@@ -1,0 +1,19 @@
+# Dependencies for the retrieval eval harness and the `rerank` retrieval mode.
+#
+# Deliberately separate from requirements.txt: these pull in PyTorch, which is
+# several hundred MB. The deployed Cloud Run image was cut from 1.8GB to 340MB
+# to fix cold starts, so it installs requirements.txt only. Install this file
+# for local eval work, or if you set SMARTDESK_RETRIEVAL=rerank and accept the
+# image cost.
+#
+# CPU-only wheels keep the download small and need no GPU:
+#   pip install --index-url https://download.pytorch.org/whl/cpu \
+#               --extra-index-url https://pypi.org/simple \
+#               -r requirements-eval.txt
+
+-r requirements.txt
+
+# Local embedding model (all-MiniLM-L6-v2) and the cross-encoder reranker.
+sentence-transformers>=5.0,<6.0
+
+pytest>=8.0
