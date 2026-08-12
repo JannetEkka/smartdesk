@@ -120,6 +120,79 @@ class VertexEmbedder:
         return self._embed([text], "RETRIEVAL_QUERY")[0]
 
 
+class GeminiAPIEmbedder:
+    """gemini-embedding-001 through the Gemini API (AI Studio), not Vertex.
+
+    Exists to remove the Vertex billing dependency: the Gemini API has a free
+    tier covering this model, and it needs only ``GOOGLE_API_KEY`` rather than
+    a billed GCP project with application default credentials.
+
+    ``output_dimensionality`` is pinned to 768 so the existing
+    ``VECTOR(768)`` column works unchanged — no migration, no re-declaring the
+    schema. Note that this model natively produces a larger vector and
+    truncates to the requested size, so Google's guidance is to re-normalise
+    after truncation, which this does.
+
+    Free-tier rate limits apply. Ingesting a large corpus may need throttling.
+    """
+
+    name = "gemini-embedding-001"
+    dimension = 768
+    BATCH_SIZE = 100
+
+    def __init__(
+        self, model: str = "gemini-embedding-001", api_key: str | None = None
+    ) -> None:
+        self.name = model
+        self._api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        if not self._api_key:
+            raise RuntimeError(
+                "GeminiAPIEmbedder needs GOOGLE_API_KEY (create one at "
+                "https://aistudio.google.com/apikey). Use SMARTDESK_EMBEDDER=local "
+                "to develop with no API access at all."
+            )
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from google import genai
+
+            self._client = genai.Client(api_key=self._api_key)
+        return self._client
+
+    @staticmethod
+    def _normalise(vector: list[float]) -> list[float]:
+        """Re-normalise to unit length after dimensionality truncation."""
+        norm = sum(x * x for x in vector) ** 0.5
+        return [x / norm for x in vector] if norm else vector
+
+    def _embed(self, texts: Sequence[str], task_type: str) -> list[list[float]]:
+        from google.genai import types
+
+        client = self._get_client()
+        out: list[list[float]] = []
+        for start in range(0, len(texts), self.BATCH_SIZE):
+            batch = list(texts[start : start + self.BATCH_SIZE])
+            response = client.models.embed_content(
+                model=self.name,
+                contents=batch,
+                config=types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=self.dimension,
+                ),
+            )
+            out.extend(self._normalise(list(e.values)) for e in response.embeddings)
+        return out
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        return self._embed(texts, "RETRIEVAL_DOCUMENT")
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed([text], "RETRIEVAL_QUERY")[0]
+
+
 class LocalEmbedder:
     """all-MiniLM-L6-v2 on CPU, for development.
 
@@ -177,9 +250,13 @@ def get_embedder(kind: str | None = None) -> Embedder:
     kind = (kind or os.getenv("SMARTDESK_EMBEDDER", "vertex")).lower()
     if kind == "vertex":
         return VertexEmbedder()
+    if kind == "gemini":
+        return GeminiAPIEmbedder()
     if kind == "local":
         return LocalEmbedder()
-    raise ValueError(f"Unknown embedder {kind!r}; expected 'vertex' or 'local'.")
+    raise ValueError(
+        f"Unknown embedder {kind!r}; expected 'vertex', 'gemini', or 'local'."
+    )
 
 
 def to_pgvector(vector: Sequence[float]) -> str:

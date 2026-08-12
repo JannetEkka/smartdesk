@@ -329,6 +329,94 @@ gcloud run services update smartdesk --region us-central1 --min-instances=1
 gcloud run services update smartdesk --region us-central1 --min-instances=0
 ```
 
+## Moving to a new GCP project
+
+Nothing in this repo belongs to a GCP project — it is all code and config. To
+move, you create a new project and redeploy the same code. What is genuinely
+tied to the old project is the OAuth client, the database, and the deployed
+service.
+
+### What has to be recreated
+
+| Thing | Tied to the old project? | Action |
+|---|---|---|
+| This repo | No | Nothing — it is on GitHub |
+| `client_secret.json` | **Yes** | Recreate the OAuth client and consent screen |
+| `token.json` | Yes (derived) | Delete it; sign in again after redeploying |
+| Project ID in `.env` | Yes | Regenerate with `setup/setup_env.sh` |
+| Database + notes | Yes | Recreate schema, re-ingest |
+| Cloud Run service | Yes | Redeploy |
+| Service account | Yes | Recreate, re-grant roles |
+
+**The OAuth client is the step that catches people out.** OAuth clients are
+per-project, so `client_secret.json` from the old project will not work. In the
+new project: APIs & Services → OAuth consent screen (External), add your own
+addresses as test users while it is unverified, then Credentials → Create
+credentials → OAuth client ID → Web application. Download the JSON as
+`smartdesk_agent/smartdesk_app/client_secret.json` and delete any stale
+`token.json` next to it.
+
+### Steps
+
+```bash
+gcloud projects create smartdesk-NEW --name="SmartDesk"
+gcloud config set project smartdesk-NEW
+# link billing in the console (the $300 / 90-day credit applies to new accounts)
+
+bash setup/setup_env.sh          # enables APIs, rewrites .env with the new project
+```
+
+Then recreate the OAuth client as above, point `DATABASE_URL` at your chosen
+database, apply the schema, re-ingest, and redeploy per
+[Deploy to Cloud Run](#deploy-to-cloud-run).
+
+### Keeping it cheap
+
+Two facts worth knowing before you pick anything:
+
+- **AlloyDB has no Always Free tier** — only a 30-day trial cluster. If your
+  old bill was a surprise, this is very likely why. It bills continuously
+  whether or not you use it.
+- **Cloud Run does have an Always Free tier** — 2M requests and 180k vCPU-
+  seconds per month. A personal assistant will not come close to that, so the
+  service itself is effectively free as long as it scales to zero.
+
+Database options, cheapest first:
+
+| Option | Cost | Trade-off |
+|---|---|---|
+| Free managed Postgres (Neon, Supabase) | Free tier | Not a GCP product — check whether hackathon Track 3 scoring requires a Google database |
+| Postgres on the Always Free `e2-micro` VM | Free | You install and maintain it; e2-micro is small |
+| Cloud SQL Postgres | ~$8–10/mo smallest | Managed, in GCP, supports pgvector, no free tier |
+| AlloyDB | Free 90 days on trial credit, then significant | Best Track 3 story; stop the cluster when idle |
+
+**Any Postgres with pgvector works** — that is what the portability work in
+`rag/db.py` bought. Only `DATABASE_URL` changes.
+
+### Dropping Vertex billing entirely
+
+The Gemini API (AI Studio) has a free tier covering both `gemini-2.5-flash`
+and `gemini-embedding-001`, and needs only an API key rather than a billed
+project:
+
+```bash
+# get a key at https://aistudio.google.com/apikey
+export GOOGLE_API_KEY=...
+export GOOGLE_GENAI_USE_VERTEXAI=FALSE     # agent uses the Gemini API
+export SMARTDESK_EMBEDDER=gemini           # embeddings use the Gemini API
+```
+
+`SMARTDESK_EMBEDDER=gemini` pins `output_dimensionality=768`, so the existing
+`VECTOR(768)` column needs no migration. Re-ingest after switching — vectors
+from different models are not comparable, and mixing them silently degrades
+retrieval rather than erroring.
+
+> **Untested.** This path was written but not run — this environment has no
+> API key. Free-tier rate limits also apply, so ingesting a large corpus may
+> need throttling. The numbers in [RESULTS.md](evals/RESULTS.md) were measured
+> on the local embedder; re-run the harness after switching to see whether
+> retrieval quality holds.
+
 ## Authentication
 
 SmartDesk uses **per-user Google OAuth**. Each user signs in with their own Google account through the chat — you will only see your own emails and calendar events.
