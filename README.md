@@ -336,6 +336,59 @@ move, you create a new project and redeploy the same code. What is genuinely
 tied to the old project is the OAuth client, the database, and the deployed
 service.
 
+### Quickstart — paste this into Cloud Shell
+
+```bash
+# 1. Get the code
+git clone https://github.com/JannetEkka/smartdesk.git
+cd smartdesk
+
+# 2. Create and select the project (skip `create` if it already exists)
+export PROJECT_ID=smartdesk-$RANDOM
+gcloud projects create "$PROJECT_ID" --name="SmartDesk"
+gcloud config set project "$PROJECT_ID"
+
+# link billing — required even for free-tier usage
+gcloud billing accounts list
+gcloud billing projects link "$PROJECT_ID" --billing-account=XXXXXX-XXXXXX-XXXXXX
+
+# 3. Choose your database and embedder
+export DATABASE_URL="postgresql+pg8000://USER:PASSWORD@HOST:5432/DBNAME"
+export EMBEDDER=gemini                       # or: vertex
+export GOOGLE_API_KEY=...                    # only when EMBEDDER=gemini
+
+# 4. APIs, service account, IAM, .env, schema, corpus
+./setup/deploy_new_project.sh all
+
+# 5. Create the OAuth client (manual — the console steps are printed by step 4)
+#    then save client_secret.json into smartdesk_agent/smartdesk_app/
+
+# 6. Deploy and get the URL
+./setup/deploy_new_project.sh deploy
+```
+
+`deploy_new_project.sh` runs in stages, and every stage is safe to re-run:
+
+| Stage | Does |
+|---|---|
+| `apis` | Enables Run, Artifact Registry, Cloud Build, Vertex AI, IAM, Logging |
+| `iam` | Creates the service account, grants `aiplatform.user`, `alloydb.client`, `logging.logWriter` |
+| `oauth` | Prints the console steps (cannot be scripted) |
+| `env` | Writes `smartdesk_app/.env`, masking secrets when it echoes back |
+| `db` | `CREATE EXTENSION vector`, applies the schema and the chunks migration, ingests the corpus |
+| `deploy` | `gcloud run deploy --source`, then prints the URL |
+| `url` | Prints the service URL and the redirect-URI reminder |
+
+`./setup/deploy_new_project.sh --help` lists them all.
+
+> **Untested against a live project.** The script is syntax-checked and its
+> env-var handling is tested (a password containing `@`, `,` and `:` round-trips
+> correctly), but this environment has no GCP access, so it has not been run
+> end to end. Expect to fix something.
+
+> **AlloyDB is deliberately not enabled** by `apis`. It has no free tier and
+> bills continuously. The script prints the command if you want it.
+
 ### What has to be recreated
 
 | Thing | Tied to the old project? | Action |
