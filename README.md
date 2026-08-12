@@ -226,6 +226,109 @@ export SMARTDESK_TEST_DATABASE_URL=postgresql+pg8000://smartdesk:smartdesk@127.0
 python -m pytest tests/
 ```
 
+## Running it
+
+There is no custom frontend. What you get is one of three surfaces, and which
+one depends on how you start it:
+
+| Surface | Command | UI? |
+|---|---|---|
+| Local dev | `cd smartdesk_agent && adk web` | Yes — ADK dev UI on `http://localhost:8000` |
+| Local API | `cd smartdesk_agent && adk api_server --port 8080 .` | No — HTTP endpoints only |
+| Cloud Run | see below | Only if deployed with `--with_ui` |
+
+**The Dockerfile in this repo runs `adk api_server`**, so a container built from
+it serves the API with no browser UI. If you want the ADK UI on the deployed
+service, deploy with `adk deploy cloud_run --with_ui` rather than building the
+Dockerfile.
+
+### Local
+
+```bash
+pip install -r requirements.txt
+bash setup/setup_env.sh          # enables APIs, writes smartdesk_app/.env
+# then add DATABASE_URL to smartdesk_agent/smartdesk_app/.env
+
+cd smartdesk_agent && adk web    # http://localhost:8000
+```
+
+### Deploy to Cloud Run
+
+The ADK CLI is the supported path — it builds and deploys in one step:
+
+```bash
+export GOOGLE_CLOUD_PROJECT=$(gcloud config get-value project)
+export GOOGLE_CLOUD_LOCATION=us-central1
+export SERVICE_NAME=smartdesk
+
+cd smartdesk_agent
+adk deploy cloud_run \
+  --project=$GOOGLE_CLOUD_PROJECT \
+  --region=$GOOGLE_CLOUD_LOCATION \
+  --service_name=$SERVICE_NAME \
+  --with_ui \
+  ./smartdesk_app
+```
+
+Drop `--with_ui` for an API-only service. To deploy the Dockerfile instead:
+
+```bash
+gcloud run deploy smartdesk \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT,GOOGLE_CLOUD_LOCATION=us-central1,MODEL=gemini-2.5-flash \
+  --set-env-vars DATABASE_URL="postgresql+pg8000://postgres:PASSWORD@ALLOYDB_IP:5432/postgres"
+```
+
+`--allow-unauthenticated` is what lets anyone with the link open it. Without it
+the URL returns 403 for everyone but you.
+
+### Getting the URL
+
+The deploy prints it, but to retrieve it later:
+
+```bash
+gcloud run services describe smartdesk \
+  --region us-central1 \
+  --format='value(status.url)'
+```
+
+That returns something like `https://smartdesk-<hash>-uc.a.run.app`. Append
+`/dev-ui` for the ADK UI when deployed `--with_ui`.
+
+> **Before sharing the URL:** every Google account that will sign in must be on
+> the OAuth consent screen's test user list while the app is unverified, or
+> sign-in fails with a 403. See [Authentication](#authentication).
+
+### Service account roles
+
+The runtime service account needs:
+
+```bash
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+  --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/aiplatform.user"
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+  --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/alloydb.client"
+```
+
+### Cost notes
+
+The service scales to zero, so an idle deployment costs nothing. Two things do
+cost money continuously and are worth knowing about:
+
+- **AlloyDB bills whether or not you use it.** Stop the cluster when not
+  actively testing; develop against local Postgres + pgvector instead (see
+  [Evaluating retrieval](#evaluating-retrieval)).
+- **`--min-instances`** keeps containers warm and bills for them. Cold start is
+  ~1.4s after the image slimming, so this is only worth setting temporarily —
+  for example during a judging window — and turning off afterwards:
+
+```bash
+gcloud run services update smartdesk --region us-central1 --min-instances=1
+gcloud run services update smartdesk --region us-central1 --min-instances=0
+```
+
 ## Authentication
 
 SmartDesk uses **per-user Google OAuth**. Each user signs in with their own Google account through the chat — you will only see your own emails and calendar events.
