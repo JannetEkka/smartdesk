@@ -1,30 +1,40 @@
-{"id": "q01", "question": "why did staging go down in march?", "relevant_note_ids": [8], "reviewed": false, "note": "distractors: notes 2 and 6 mention the SSL issue but do not explain the cause"}
-{"id": "q02", "question": "what did we do about the slow first request after the app sits idle?", "relevant_note_ids": [9], "reviewed": false}
-{"id": "q03", "question": "how much is the database costing us and what did we do to cut it?", "relevant_note_ids": [24, 51], "reviewed": false, "note": "24 has the spend breakdown, 51 is where the overnight shutdown was raised"}
-{"id": "q04", "question": "what are our pricing tiers?", "relevant_note_ids": [25, 26], "reviewed": false, "note": "26 supersedes 25; a recency-aware ranker should prefer 26"}
-{"id": "q05", "question": "why did finance push back on the pricing proposal?", "relevant_note_ids": [26], "reviewed": false}
-{"id": "q06", "question": "when does the intern start and what are the terms?", "relevant_note_ids": [21], "reviewed": false, "note": "5 is the interview and mentions a July 1 start but not the terms"}
-{"id": "q07", "question": "did we decide to add an index to the vector column?", "relevant_note_ids": [16], "reviewed": false}
-{"id": "q08", "question": "which embedding model are we using and why that one?", "relevant_note_ids": [17], "reviewed": false}
-{"id": "q09", "question": "how did we stop the assistant replying to the same question twice?", "relevant_note_ids": [48], "reviewed": false}
-{"id": "q10", "question": "what was the worst security problem we found this year?", "relevant_note_ids": [56], "reviewed": false, "note": "103 also references it in passing; 56 is the note that describes it"}
-{"id": "q11", "question": "where do we keep google oauth tokens now?", "relevant_note_ids": [55, 31], "reviewed": false, "note": "31 recommended the change, 55 is the migration"}
-{"id": "q12", "question": "what came out of the penetration test?", "relevant_note_ids": [89], "reviewed": false}
-{"id": "q13", "question": "why did we move off datadog and what did we pick?", "relevant_note_ids": [29, 30], "reviewed": false}
-{"id": "q14", "question": "what caused all those pages in the middle of the night?", "relevant_note_ids": [78], "reviewed": false}
-{"id": "q15", "question": "there was a time notes search returned nothing at all, what happened?", "relevant_note_ids": [79], "reviewed": false}
-{"id": "q16", "question": "did techcorp ever hit their latency target at higher data volume?", "relevant_note_ids": [39, 71], "reviewed": false, "note": "39 missed the target at 10x, 71 is where it was met after denormalisation"}
-{"id": "q17", "question": "what was the problem with startupx single sign on?", "relevant_note_ids": [58, 59], "reviewed": false}
-{"id": "q18", "question": "why did we lose meridian?", "relevant_note_ids": [96, 97], "reviewed": false}
-{"id": "q19", "question": "what went wrong on launch day?", "relevant_note_ids": [106], "reviewed": false}
-{"id": "q20", "question": "who do i escalate to if i am on call and stuck?", "relevant_note_ids": [45], "reviewed": false}
-{"id": "q21", "question": "what does someone need before they get production access?", "relevant_note_ids": [76], "reviewed": false}
-{"id": "q22", "question": "what is the rule about feature flags nobody turns on?", "relevant_note_ids": [100], "reviewed": false, "note": "94 is the retro that prompted the policy"}
-{"id": "q23", "question": "did the runbooks actually work when we tested them?", "relevant_note_ids": [54], "reviewed": false}
-{"id": "q24", "question": "why are we measuring retrieval before improving it?", "relevant_note_ids": [80, 107], "reviewed": false}
-{"id": "q25", "question": "how should we be splitting long documents for search?", "relevant_note_ids": [41, 107], "reviewed": false}
-{"id": "q26", "question": "what are the options for reordering search results?", "relevant_note_ids": [42], "reviewed": false, "note": "116 covers hybrid lexical search which is adjacent but a different question"}
-{"id": "q27", "question": "was the internship worth it, what did she actually deliver?", "relevant_note_ids": [114], "reviewed": false, "note": "110 is the mid-internship 1:1"}
-{"id": "q28", "question": "if search returns a chunk how does the user know which note it came from?", "relevant_note_ids": [111], "reviewed": false}
-{"id": "q29", "question": "what do we use for load testing and why did we change?", "relevant_note_ids": [84], "reviewed": false}
-{"id": "q30", "question": "how does the team handle design requests coming in over chat?", "relevant_note_ids": [77], "reviewed": false, "note": "75 is where Sneha raised the problem"}
+{"id": "q01", "question": "which email did i use for the dorahacks account?", "relevant_note_ids": [23], "reviewed": false, "note": "distractors: notes 1, 82 and 98 all mention DoraHacks; 23 is the note about the account itself"}
+{"id": "q02", "question": "who owns the gcp project, is it the same account i registered the hackathon with?", "relevant_note_ids": [2], "reviewed": false, "note": "82 and 86 also cover this mismatch"}
+{"id": "q03", "question": "why was the app answering me twice?", "relevant_note_ids": [7], "reviewed": false}
+{"id": "q04", "question": "what did i do about the first request being really slow?", "relevant_note_ids": [10], "reviewed": false, "note": "90 covers the image slimming detail, 30 covers keeping it warm for judging"}
+{"id": "q05", "question": "how do i keep the alloydb bill down?", "relevant_note_ids": [11], "reviewed": false, "note": "109 is the general cost discipline note"}
+{"id": "q06", "question": "why does search go through python instead of the database embedding function?", "relevant_note_ids": [12], "reviewed": false}
+{"id": "q07", "question": "that time notes search returned nothing at all, what was it?", "relevant_note_ids": [13], "reviewed": false}
+{"id": "q08", "question": "i got a dimension error on ingest once, what caused it?", "relevant_note_ids": [14], "reviewed": false}
+{"id": "q09", "question": "when does the patent clock run out?", "relevant_note_ids": [37], "reviewed": false, "note": "36, 78 and 112 are adjacent; 37 is the one about the twelve month window"}
+{"id": "q10", "question": "can i talk about the patent stuff in a public hackathon submission?", "relevant_note_ids": [38], "reviewed": false}
+{"id": "q11", "question": "which account are weex and onebullex on?", "relevant_note_ids": [40], "reviewed": false, "note": "1 and 82 also list them; 40 is the trading platform note"}
+{"id": "q12", "question": "what did i set up to stop someone draining the exchange accounts?", "relevant_note_ids": [89], "reviewed": false, "note": "41 covers 2FA; 89 is withdrawal whitelisting which is the actual damage cap"}
+{"id": "q13", "question": "which account do job applications go out from?", "relevant_note_ids": [31, 73], "reviewed": false}
+{"id": "q14", "question": "what should i actually talk about in interviews about this project?", "relevant_note_ids": [34, 101], "reviewed": false}
+{"id": "q15", "question": "how long can the demo video be?", "relevant_note_ids": [96], "reviewed": false, "note": "21 mentions a limit exists; 96 is the note about it being strict"}
+{"id": "q16", "question": "how many slides does the deck need to be?", "relevant_note_ids": [27], "reviewed": false, "note": "21 and 86 also reference the template"}
+{"id": "q17", "question": "what went wrong at previous hackathons that i should avoid?", "relevant_note_ids": [29], "reviewed": false}
+{"id": "q18", "question": "do judges need to be added somewhere before they can log in?", "relevant_note_ids": [3], "reviewed": false}
+{"id": "q19", "question": "should the submission repo be public or private?", "relevant_note_ids": [58], "reviewed": false, "note": "59 covers keeping secrets out, 86 is the full checklist"}
+{"id": "q20", "question": "why did i split into multiple agents instead of one?", "relevant_note_ids": [5], "reviewed": false, "note": "81 is the long architecture log and also covers it"}
+{"id": "q21", "question": "why am i not using langchain?", "relevant_note_ids": [71], "reviewed": false}
+{"id": "q22", "question": "why no index on the vector column yet?", "relevant_note_ids": [19], "reviewed": false}
+{"id": "q23", "question": "what is wrong with how oauth tokens are stored?", "relevant_note_ids": [9], "reviewed": false, "note": "67 covers the related session state assumption; 66 is the interview framing"}
+{"id": "q24", "question": "why build the eval before changing retrieval?", "relevant_note_ids": [15, 84], "reviewed": false}
+{"id": "q25", "question": "why does overlap matter when splitting notes up?", "relevant_note_ids": [106], "reviewed": false, "note": "16 is the general chunking note"}
+{"id": "q26", "question": "if search returns a fragment how do i know which note it came from?", "relevant_note_ids": [62], "reviewed": false, "note": "114 covers the return shape compatibility"}
+{"id": "q27", "question": "can i trust a two point improvement from thirty questions?", "relevant_note_ids": [69], "reviewed": false, "note": "76 is about overfitting, a different failure"}
+{"id": "q28", "question": "why shouldn't i tune the chunk size on my own eval set?", "relevant_note_ids": [76], "reviewed": false}
+{"id": "q29", "question": "does smartdesk have a web frontend?", "relevant_note_ids": [4], "reviewed": false, "note": "87 lists it among things deliberately not built"}
+{"id": "q30", "question": "what env var do i need or the sdk hits the wrong api?", "relevant_note_ids": [47], "reviewed": false}
+{"id": "q31", "question": "which gemini model am i on and why not pro?", "relevant_note_ids": [44], "reviewed": false}
+{"id": "q32", "question": "roughly what does one conversation cost me?", "relevant_note_ids": [45], "reviewed": false}
+{"id": "q33", "question": "why is contacts lookup not semantic search?", "relevant_note_ids": [55], "reviewed": false}
+{"id": "q34", "question": "which codelabs were actually useful for the build?", "relevant_note_ids": [25], "reviewed": false}
+{"id": "q35", "question": "what happens if i lose my phone, are the recovery codes in email?", "relevant_note_ids": [74], "reviewed": false, "note": "41 also mentions offline recovery codes"}
+{"id": "q36", "question": "i keep mixing up the two hackathon deadlines", "relevant_note_ids": [99], "reviewed": false}
+{"id": "q37", "question": "why do i verify transactions on etherscan instead of the platform?", "relevant_note_ids": [110], "reviewed": false}
+{"id": "q38", "question": "what breaks when i edit the root agent instruction?", "relevant_note_ids": [94], "reviewed": false}
+{"id": "q39", "question": "why commit before the session ends?", "relevant_note_ids": [107], "reviewed": false, "note": "53 covers why development happens in web sessions"}
+{"id": "q40", "question": "what is the actual reason i am building this thing", "relevant_note_ids": [118], "reviewed": false, "note": "52 and 80 cover the same frustration; 118 states the problem directly"}
