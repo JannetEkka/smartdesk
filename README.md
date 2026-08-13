@@ -489,10 +489,10 @@ Database options, cheapest first:
 
 | Option | Cost | Trade-off |
 |---|---|---|
-| Free managed Postgres (Neon, Supabase) | Free tier | Not a GCP product — check whether hackathon Track 3 scoring requires a Google database |
+| Free managed Postgres (Neon, Supabase) | Free tier | Not a GCP product, but pgvector works the same |
 | Postgres on the Always Free `e2-micro` VM | Free | You install and maintain it; e2-micro is small |
 | Cloud SQL Postgres | ~$8–10/mo smallest | Managed, in GCP, supports pgvector, no free tier |
-| AlloyDB | Free 90 days on trial credit, then significant | Best Track 3 story; stop the cluster when idle |
+| AlloyDB | Free 90 days on trial credit, then significant | Overkill at this corpus size; stop the cluster when idle |
 
 **Any Postgres with pgvector works** — that is what the portability work in
 `rag/db.py` bought. Only `DATABASE_URL` changes.
@@ -539,17 +539,17 @@ SmartDesk uses **per-user Google OAuth**. Each user signs in with their own Goog
 
 ## Sample Prompts
 
-**Email (Track 2 — Gmail MCP):**
+**Email** (Gmail MCP):
 - "Show me my latest emails"
 - "Search for emails from [colleague name]"
 - "Draft an email to test@example.com about the project update"
 
-**Calendar (Track 2 — Calendar MCP):**
+**Calendar** (Calendar MCP):
 - "What's on my schedule today?"
 - "Find free time slots for tomorrow"
 - "Create a meeting called 'Team Sync' tomorrow at 2pm to 3pm"
 
-**Knowledge Base (Track 3 — AlloyDB with vector search):**
+**Knowledge base** (vector search over notes):
 - "What are my pending tasks?"
 - "Search my notes about product launch"
 - "Add a task: Review Q2 budget with high priority, due 2026-04-10"
