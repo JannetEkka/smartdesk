@@ -100,20 +100,25 @@ corpus, 40 labelled questions:
 
 | strategy | R@1 | R@5 | MRR@10 | latency |
 |---|---|---|---|---|
-| **`baseline`** *(default)* | **0.800** | 0.963 | **0.886** | 31 ms |
+| **`baseline`** *(default)* | 0.800 | **0.963** | 0.886 | **29 ms** |
 | `chunked` | 0.800 | 0.963 | 0.885 | 24 ms |
 | `hybrid` | 0.775 | 0.950 | 0.870 | 52 ms |
 | chunked + RRF | 0.750 | **0.975** | 0.859 | 37 ms |
+| `rerank` (cross-encoder) | **0.838** | 0.950 | **0.914** | 2,382 ms |
 
-**Plain baseline retrieval wins.** Every alternative is neutral or worse, and
-none is statistically significant. `search_notes` therefore stays on
-`baseline` — now on evidence rather than caution.
+**Plain baseline retrieval wins.** Nothing is statistically significant. The
+cross-encoder is nominally ahead on MRR@10 (+0.028) but the interval spans
+zero (p = 0.44) and it costs **82x the latency** plus ~190 MB of PyTorch in an
+image deliberately slimmed to fix cold starts. `search_notes` stays on
+`baseline` — on evidence, not caution.
 
 The same comparison on a weaker development embedder (all-MiniLM-L6-v2)
-reached the *opposite* conclusion, ranking a cross-encoder reranker best by a
-significant margin. A stronger embedder produces better candidates and leaves
-less for a reranker to fix. [RESULTS.md](evals/RESULTS.md) §0 has the detail;
-it is the clearest argument in the project for measuring rather than assuming.
+reached the *opposite* conclusion: there the cross-encoder won by a
+significant margin (+0.094, p = 0.04). On the production embedder that shrank
+to +0.028 and lost significance. A stronger embedder produces better
+candidates and leaves less for a reranker to fix.
+[RESULTS.md](evals/RESULTS.md) §0 has the detail; it is the clearest argument
+in the project for measuring rather than assuming.
 
 <details>
 <summary>Development-embedder numbers (all-MiniLM-L6-v2), for comparison</summary>
