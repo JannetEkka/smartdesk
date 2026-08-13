@@ -4,9 +4,96 @@ Measurements for SmartDesk's notes retrieval, run in the order the work was
 done: harness first, then chunking, then reranking. Reproducible with the
 commands in [README](../README.md#evaluating-retrieval).
 
-**Headline: a cross-encoder reranking chunk retrieval is the only change that
-beat the baseline significantly — MRR@10 +0.094, R@1 +0.138, p = 0.04. It is
-implemented and switchable, but not the default, for reasons in §5.**
+> **Read §0 first.** The pipeline has now been measured on the production
+> embedder, and the conclusion is different from the development-embedder
+> result that the rest of this document describes.
+
+---
+
+## 0. On text-embedding-005, plain retrieval wins
+
+Everything in sections 2–4 was measured with all-MiniLM-L6-v2, because this
+environment had no Vertex credentials. That measurement has now been repeated
+against **text-embedding-005**, the production embedder, on 120 notes and 40
+questions.
+
+| strategy | R@1 | R@5 | R@10 | MRR@10 | latency |
+|---|---|---|---|---|---|
+| **baseline** | 0.800 | **0.963** | 0.975 | 0.886 | **29 ms** |
+| chunked | 0.800 | 0.963 | 0.975 | 0.885 | 24 ms |
+| hybrid-rrf | 0.775 | 0.950 | 0.975 | 0.870 | 52 ms |
+| baseline+rrf | 0.775 | 0.938 | 0.950 | 0.858 | 23 ms |
+| chunked+rrf | 0.750 | **0.975** | 0.975 | 0.859 | 37 ms |
+| chunked+cross-encoder | **0.838** | 0.950 | **1.000** | **0.914** | 2,382 ms |
+
+Paired bootstrap vs baseline on rr@10: **nothing is significant.** The four
+free strategies are all negative (p 0.37–0.64). The cross-encoder is positive
+but well inside the noise: **+0.028, 95% CI [−0.041, +0.101], p = 0.44,
+5 questions better / 4 worse.**
+
+**Two things changed relative to the MiniLM runs.**
+
+First, the baseline got much better: R@1 0.700 → 0.800, MRR@10 0.814 → 0.886.
+A stronger embedder simply retrieves better, which is what you would hope.
+
+Second, and more usefully: **every reranker went from helping to hurting.**
+`chunked+rrf` was the second-best strategy on MiniLM at MRR@10 +0.047. On
+text-embedding-005 it is −0.027. The sign flipped.
+
+The mechanism is the one predicted in §9 before this was run: a stronger
+embedder produces better candidates, leaving less for a reranker to fix and
+more for it to break. When the top-5 is already correct 96% of the time,
+reordering has far more to lose than to gain.
+
+**This is the single most valuable result in this document**, because the
+MiniLM measurement alone would have justified shipping a cross-encoder that
+adds ~700 ms and several hundred MB of PyTorch to the deployed image — for
+nothing, on the embedder actually in production.
+
+### The cross-encoder result did not survive
+
+The one statistically significant win in this document was
+`chunked+cross-encoder` on MiniLM: MRR@10 **+0.094**, p = 0.04, 8 questions
+better / 2 worse. Re-run on text-embedding-005:
+
+| | MiniLM | text-embedding-005 |
+|---|---|---|
+| MRR@10 delta | **+0.094** | +0.028 |
+| 95% CI | [+0.012, +0.186] | [−0.041, +0.101] |
+| p | **0.04** | 0.44 |
+| better/worse | 8 / 2 | 5 / 4 |
+| latency | 699 ms | 2,382 ms |
+
+**The advantage shrank to under a third of its size and lost significance.**
+This was predicted before the run, on the reasoning that a stronger embedder
+leaves a reranker less to fix — and the prediction held.
+
+Two things it genuinely does better are worth recording honestly: R@1 is
++0.037 (0.838 vs 0.800), and R@10 reaches **1.000** — every question's answer
+appears somewhere in the top ten. But R@5, which is what `search_notes`
+actually returns, is *worse* (0.950 vs 0.963), and none of it clears the
+noise threshold.
+
+Against that: **2,382 ms per search versus 29 ms**, an 82x latency cost, plus
+~190 MB of PyTorch in an image deliberately slimmed from 1.8 GB to 340 MB to
+fix cold starts. For an effect that cannot be distinguished from zero.
+
+### Verdict
+
+`SMARTDESK_RETRIEVAL` stays on `baseline`. That was already the default for
+caution; it is now the default on evidence, and the evidence is complete —
+every strategy has been measured on the embedder that actually runs in
+production.
+
+---
+
+**Everything below was measured on all-MiniLM-L6-v2 and is retained because
+the reasoning still holds — but where it disagrees with §0, §0 is the one
+that reflects production.**
+
+**Headline (development embedder): a cross-encoder reranking chunk retrieval
+is the only change that beat the baseline significantly — MRR@10 +0.094,
+R@1 +0.138, p = 0.04.**
 
 ---
 

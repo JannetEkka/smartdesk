@@ -51,6 +51,15 @@ class Embedder(Protocol):
         """Embed a single search query."""
         ...
 
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed several queries in as few round trips as possible.
+
+        The eval harness embeds every question up front. Doing that one call
+        at a time is dozens of sequential network round trips with no output,
+        which looks indistinguishable from a hang.
+        """
+        ...
+
 
 class VertexEmbedder:
     """text-embedding-005 through Vertex AI.
@@ -118,6 +127,11 @@ class VertexEmbedder:
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed([text], "RETRIEVAL_QUERY")[0]
+
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        return self._embed(texts, "RETRIEVAL_QUERY")
 
 
 class GeminiAPIEmbedder:
@@ -192,6 +206,11 @@ class GeminiAPIEmbedder:
     def embed_query(self, text: str) -> list[float]:
         return self._embed([text], "RETRIEVAL_QUERY")[0]
 
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        return self._embed(texts, "RETRIEVAL_QUERY")
+
 
 class LocalEmbedder:
     """all-MiniLM-L6-v2 on CPU, for development.
@@ -239,6 +258,9 @@ class LocalEmbedder:
 
     def embed_query(self, text: str) -> list[float]:
         return self.embed_documents([text])[0]
+
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]:
+        return self.embed_documents(texts)
 
 
 @lru_cache(maxsize=None)

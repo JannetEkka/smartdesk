@@ -95,6 +95,34 @@ smartdesk/
 Retrieval quality is measured, not assumed. **[evals/RESULTS.md](evals/RESULTS.md)
 has the numbers**, including what did not help.
 
+Measured on **text-embedding-005**, the production embedder — 120-note personal
+corpus, 40 labelled questions:
+
+| strategy | R@1 | R@5 | MRR@10 | latency |
+|---|---|---|---|---|
+| **`baseline`** *(default)* | 0.800 | **0.963** | 0.886 | **29 ms** |
+| `chunked` | 0.800 | 0.963 | 0.885 | 24 ms |
+| `hybrid` | 0.775 | 0.950 | 0.870 | 52 ms |
+| chunked + RRF | 0.750 | **0.975** | 0.859 | 37 ms |
+| `rerank` (cross-encoder) | **0.838** | 0.950 | **0.914** | 2,382 ms |
+
+**Plain baseline retrieval wins.** Nothing is statistically significant. The
+cross-encoder is nominally ahead on MRR@10 (+0.028) but the interval spans
+zero (p = 0.44) and it costs **82x the latency** plus ~190 MB of PyTorch in an
+image deliberately slimmed to fix cold starts. `search_notes` stays on
+`baseline` — on evidence, not caution.
+
+The same comparison on a weaker development embedder (all-MiniLM-L6-v2)
+reached the *opposite* conclusion: there the cross-encoder won by a
+significant margin (+0.094, p = 0.04). On the production embedder that shrank
+to +0.028 and lost significance. A stronger embedder produces better
+candidates and leaves less for a reranker to fix.
+[RESULTS.md](evals/RESULTS.md) §0 has the detail; it is the clearest argument
+in the project for measuring rather than assuming.
+
+<details>
+<summary>Development-embedder numbers (all-MiniLM-L6-v2), for comparison</summary>
+
 120-note personal corpus, 40 labelled questions, all-MiniLM-L6-v2, Postgres + pgvector:
 
 | strategy | R@1 | R@5 | MRR@10 | latency | cost / 1k |
@@ -116,10 +144,9 @@ labels have not been human-reviewed yet. `chunked+rrf` is the free alternative
 at +0.047 MRR@10 and 16 ms.
 
 Chunking on its own did **not** help (−0.003) — only 6 of 120 notes were long
-enough to split. It earns its place as a *candidate generator* for rerankers,
-not as a retrieval win by itself. [RESULTS.md](evals/RESULTS.md) has the full
-picture, including a case where the same reranker was the *worst* option on a
-different corpus.
+enough to split.
+
+</details>
 
 ### Reproducing the eval locally
 

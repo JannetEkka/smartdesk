@@ -218,14 +218,26 @@ stage_db() {
   psql "$psql_url" -f "$REPO_ROOT/setup/setup_alloydb.sql" >/dev/null 2>&1 || \
     warn "setup_alloydb.sql skipped (expected off AlloyDB: it uses embedding())."
 
-  psql "$psql_url" -v ON_ERROR_STOP=1 -f "$REPO_ROOT/setup/migrations/001_note_chunks.sql" \
-    >/dev/null || warn "chunks migration failed — chunked/hybrid/rerank modes will not work."
-
+  # Ingest BEFORE the chunks migration, not after. ingest.py creates both the
+  # notes table and note_chunks, sized to the active embedder's dimension. The
+  # migration declares a foreign key to notes, so running it first against a
+  # fresh database fails with 'relation "notes" does not exist' — which is
+  # exactly what happens when setup_alloydb.sql could not create notes either.
+  #
   # Deliberately no --reset: that drops the notes table. Ingest is idempotent
   # via ON CONFLICT, so re-running is safe on a database with real notes in it.
   echo "Ingesting the eval corpus..."
-  ( cd "$REPO_ROOT" && SMARTDESK_EMBEDDER="$EMBEDDER" DATABASE_URL="$DATABASE_URL" \
-      python3 evals/ingest.py --title-prefix )
+  if ! ( cd "$REPO_ROOT" && SMARTDESK_EMBEDDER="$EMBEDDER" DATABASE_URL="$DATABASE_URL" \
+      python3 evals/ingest.py --title-prefix ); then
+    echo "ERROR: ingest failed. Nothing further will work until this does." >&2
+    return 1
+  fi
+
+  # Now that notes exists, the migration is a no-op on a fresh database
+  # (CREATE TABLE IF NOT EXISTS) and does real work only on an existing
+  # AlloyDB deployment that predates chunking.
+  psql "$psql_url" -v ON_ERROR_STOP=1 -f "$REPO_ROOT/setup/migrations/001_note_chunks.sql" \
+    >/dev/null 2>&1 || warn "chunks migration reported an error (harmless if ingest already created note_chunks)."
 }
 
 stage_deploy() {

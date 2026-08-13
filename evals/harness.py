@@ -147,6 +147,11 @@ def main() -> int:
     questions = load_questions()
     unreviewed = sum(1 for q in questions if not q.get("reviewed"))
 
+    # Validate strategy names FIRST. Building them is cheap; embedding every
+    # question is not. Doing this after the embedding phase means a typo costs
+    # a full minute and a round of API calls before it is reported.
+    strategies = build_strategies(args.strategies)
+
     embedder = get_embedder()
     embedder.embed_query("warmup")
 
@@ -163,13 +168,20 @@ def main() -> int:
         print()
     print()
 
-    # Embed every question once and share across strategies.
-    qvecs = {q["id"]: embedder.embed_query(q["question"]) for q in questions}
+    # Embed every question once and share across strategies. Batched: one
+    # request beats forty sequential round trips, which against a remote
+    # embedder is slow enough to look like a hang.
+    print(f"Embedding {len(questions)} questions with {embedder.name}...", flush=True)
+    start = time.perf_counter()
+    vectors = embedder.embed_queries([q["question"] for q in questions])
+    qvecs = {q["id"]: v for q, v in zip(questions, vectors)}
+    print(f"  done in {time.perf_counter() - start:.1f}s\n", flush=True)
 
-    strategies = build_strategies(args.strategies)
     results = []
     for name, fn in strategies.items():
+        print(f"Running {name}...", flush=True)
         results.append(run_strategy(name, fn, questions, qvecs))
+    print()
 
     baseline = next((r for r in results if r.name == args.baseline_name), None)
     print(format_table(results, baseline))
