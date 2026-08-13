@@ -55,17 +55,20 @@ Embeddings are computed **client-side** and bound as a query parameter rather th
 
 ## Tech Stack
 
-| Component | Technology | Track |
-|-----------|-----------|-------|
-| Agent Framework | Google ADK 1.14.0 | Track 1 |
-| LLM | Gemini 2.5 Flash (Vertex AI) | Track 1 |
-| Deployment | Cloud Run (serverless) | Track 1 |
-| Email Integration | Gmail MCP Server | Track 2 |
-| Calendar Integration | Google Calendar MCP Server | Track 2 |
-| Database | AlloyDB for PostgreSQL | Track 3 |
-| Vector Search | text-embedding-005 (768 dims) | Track 3 |
-| Dev Database | Postgres 16 + pgvector (same schema, no cloud cost) | Track 3 |
-| Retrieval Eval | recall@k, MRR@k, paired bootstrap — see [RESULTS.md](evals/RESULTS.md) | Track 3 |
+| Component | Technology |
+|-----------|-----------|
+| Agent framework | Google ADK 1.14.0 |
+| LLM | Gemini 2.5 Flash |
+| Deployment | Cloud Run (scales to zero) |
+| Email / Calendar | Self-hosted MCP servers over stdio |
+| Production database | AlloyDB, or any Postgres with pgvector |
+| Dev database | Postgres 16 + pgvector — same schema, no cloud cost |
+| Embeddings | text-embedding-005 (768d), swappable for Gemini API or local MiniLM |
+| Retrieval eval | recall@k, MRR@k, paired bootstrap — [RESULTS.md](evals/RESULTS.md) |
+
+No retrieval framework: plain SQL, ~20 lines of BM25, and reciprocal rank
+fusion written out. The mechanics stay legible so a moving number can be
+explained.
 
 ## Project Structure
 
