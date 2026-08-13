@@ -159,11 +159,13 @@ EOF
   fi
 
   if [[ "$EMBEDDER" == "gemini" ]]; then
-    if [[ -n "${GOOGLE_API_KEY:-}" ]]; then
-      echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> "$ENV_FILE"
+    # "..." is the placeholder from the docs; pasting it verbatim is easy to do
+    # and otherwise surfaces much later as an opaque auth failure.
+    if [[ -z "${GOOGLE_API_KEY:-}" || "${GOOGLE_API_KEY}" == "..." ]]; then
+      warn "EMBEDDER=gemini but GOOGLE_API_KEY is unset or still the placeholder."
+      warn "Get a free key at https://aistudio.google.com/apikey, then re-run: $0 env"
     else
-      warn "EMBEDDER=gemini but GOOGLE_API_KEY is not set."
-      warn "Get one at https://aistudio.google.com/apikey"
+      echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> "$ENV_FILE"
     fi
   fi
 
@@ -177,18 +179,50 @@ stage_db() {
     echo "ERROR: DATABASE_URL is required for this stage." >&2
     echo "Any Postgres with pgvector works. Examples:" >&2
     echo "  postgresql+pg8000://user:pw@host:5432/dbname" >&2
-    exit 1
+    return 1
+  fi
+
+  # Catch the documentation placeholder being pasted verbatim, which otherwise
+  # fails several commands later with an opaque DNS error on the host "HOST".
+  if [[ "$DATABASE_URL" == *"USER:PASSWORD@HOST"* || "$DATABASE_URL" == *"DBNAME"* ]]; then
+    echo "ERROR: DATABASE_URL still contains the placeholder from the docs:" >&2
+    echo "  $DATABASE_URL" >&2
+    echo "Replace USER, PASSWORD, HOST and DBNAME with a real Postgres that has" >&2
+    echo "pgvector, then re-run: $0 db" >&2
+    return 1
+  fi
+
+  # Fail early on missing packages rather than after the schema is half applied.
+  if ! python3 -c "import sqlalchemy, pg8000" 2>/dev/null; then
+    echo "ERROR: Python dependencies are missing. Install them with:" >&2
+    echo "  pip install -r requirements.txt" >&2
+    echo "(requirements-eval.txt is only needed for EMBEDDER=local or the" >&2
+    echo " cross-encoder reranker — it pulls PyTorch, several hundred MB.)" >&2
+    return 1
   fi
 
   # psql needs a plain postgresql:// URL; the app uses the +pg8000 driver form.
   local psql_url="${DATABASE_URL/+pg8000/}"
 
   echo "Creating extension and tables..."
-  psql "$psql_url" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector;"
-  psql "$psql_url" -v ON_ERROR_STOP=1 -f "$REPO_ROOT/setup/setup_alloydb.sql" || \
-    warn "setup_alloydb.sql failed — it uses AlloyDB's embedding() function."
-  psql "$psql_url" -v ON_ERROR_STOP=1 -f "$REPO_ROOT/setup/migrations/001_note_chunks.sql"
+  if ! psql "$psql_url" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector;"; then
+    echo "ERROR: could not connect, or pgvector is unavailable on this server." >&2
+    echo "Check the host is reachable and the database supports the vector" >&2
+    echo "extension. Managed Postgres usually needs it enabled explicitly." >&2
+    return 1
+  fi
 
+  # setup_alloydb.sql uses AlloyDB's in-database embedding() function, which
+  # stock Postgres lacks. Its tables are created by ingest.py anyway, so a
+  # failure here is expected off AlloyDB and is not fatal.
+  psql "$psql_url" -f "$REPO_ROOT/setup/setup_alloydb.sql" >/dev/null 2>&1 || \
+    warn "setup_alloydb.sql skipped (expected off AlloyDB: it uses embedding())."
+
+  psql "$psql_url" -v ON_ERROR_STOP=1 -f "$REPO_ROOT/setup/migrations/001_note_chunks.sql" \
+    >/dev/null || warn "chunks migration failed — chunked/hybrid/rerank modes will not work."
+
+  # Deliberately no --reset: that drops the notes table. Ingest is idempotent
+  # via ON CONFLICT, so re-running is safe on a database with real notes in it.
   echo "Ingesting the eval corpus..."
   ( cd "$REPO_ROOT" && SMARTDESK_EMBEDDER="$EMBEDDER" DATABASE_URL="$DATABASE_URL" \
       python3 evals/ingest.py --title-prefix )
@@ -273,7 +307,14 @@ case "${1:-all}" in
     stage_apis
     stage_iam
     stage_env
-    [[ -n "${DATABASE_URL:-}" ]] && stage_db || warn "Skipping db: DATABASE_URL not set."
+    # if/else, not `A && B || C`: with the latter, a *failing* stage_db falls
+    # through to the C branch and reports "DATABASE_URL not set", which is a
+    # lie when the real problem was an unreachable host or a missing package.
+    if [[ -n "${DATABASE_URL:-}" ]]; then
+      stage_db || warn "db stage failed — fix the cause and re-run: $0 db"
+    else
+      warn "Skipping db: DATABASE_URL not set."
+    fi
     stage_oauth
     echo
     warn "Set up the OAuth client above, then run: $0 deploy"
