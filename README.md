@@ -1,10 +1,53 @@
-# SmartDesk — Multi-Agent Productivity Assistant
+# SmartDesk — Multi-Agent Assistant with a Measured RAG Pipeline
 
-A multi-agent AI system built with **Google ADK**, **Gemini 2.5 Flash**, **MCP**, and **AlloyDB** for the **Google Cloud Hackathon** (Multi-Agent Productivity Assistant track).
+A single-user personal assistant built on **Google ADK**, **Gemini 2.5 Flash**,
+**MCP**, and **Postgres/pgvector**, with a retrieval pipeline whose quality is
+**measured rather than assumed**.
 
-SmartDesk is a single chat interface backed by a team of specialized agents that handle email, calendar, and a personal knowledge base — so you can ask things like *"what's on my plate today?"* and get an answer that spans your inbox, schedule, and notes.
+SmartDesk is one chat interface over three specialised agents — email, calendar,
+and a personal knowledge base — so *"what's on my plate today?"* returns an
+answer spanning all three.
 
-**Scope:** a single-user personal project. There is no web frontend — the interface is ADK's dev UI (`adk web`) locally, or an HTTP request against the Cloud Run service. The OAuth and session-state design both assume one user; see [`evals/RESULTS.md`](evals/RESULTS.md) and the corpus notes for where that assumption is baked in.
+**The retrieval evaluation is the point.** Most RAG projects ship chunking and
+reranking because the techniques are standard. This one has a labelled question
+set, recall@k and MRR@k with confidence intervals, and committed numbers for
+every variant. On this corpus the standard techniques **did not help**, and the
+measurement is what proved it — including a case where the same reranker looked
+like a clear winner on one embedder and a clear loser on the production one.
+Start at [`evals/RESULTS.md`](evals/RESULTS.md).
+
+**Scope and history.** Originally built for the Google Cloud Multi-Agent
+Productivity Assistant hackathon; now a personal project kept for its own sake
+and as a worked example of retrieval evaluation. The eval corpus is a knowledge
+base of that history, hackathon logistics included, because that is what was
+actually going on while it was built.
+
+There is no custom web frontend. The interface is ADK's own dev UI (`adk web`)
+locally, or the **Cloud Run service URL** once deployed — see
+[Running it](#running-it) for how to get that URL and how to deploy *with* the
+ADK UI attached. The OAuth and session-state design both assume a single user.
+
+## Live deployment
+
+| | |
+|---|---|
+| **Service URL** | _not yet deployed — fill in after `deploy_new_project.sh deploy`_ |
+| **ADK UI** | append `/dev-ui` to the service URL (only if deployed `--with_ui`) |
+| **Project** | `smartdesk-505315` |
+| **Region** | `us-central1` |
+| **Database** | _fill in: Neon / Cloud SQL / other_ |
+
+Retrieve the URL at any time:
+
+```bash
+gcloud run services describe smartdesk --region us-central1 --format='value(status.url)'
+```
+
+The service scales to zero, so an idle deployment costs nothing and the first
+request after a quiet period takes ~1.4s.
+
+> Sign-in only works for Google accounts on the OAuth consent screen's **test
+> users** list while the app is unverified. Anyone else gets a 403.
 
 ## Architecture
 
@@ -34,17 +77,20 @@ Embeddings are computed **client-side** and bound as a query parameter rather th
 
 ## Tech Stack
 
-| Component | Technology | Track |
-|-----------|-----------|-------|
-| Agent Framework | Google ADK 1.14.0 | Track 1 |
-| LLM | Gemini 2.5 Flash (Vertex AI) | Track 1 |
-| Deployment | Cloud Run (serverless) | Track 1 |
-| Email Integration | Gmail MCP Server | Track 2 |
-| Calendar Integration | Google Calendar MCP Server | Track 2 |
-| Database | AlloyDB for PostgreSQL | Track 3 |
-| Vector Search | text-embedding-005 (768 dims) | Track 3 |
-| Dev Database | Postgres 16 + pgvector (same schema, no cloud cost) | Track 3 |
-| Retrieval Eval | recall@k, MRR@k, paired bootstrap — see [RESULTS.md](evals/RESULTS.md) | Track 3 |
+| Component | Technology |
+|-----------|-----------|
+| Agent framework | Google ADK 1.14.0 |
+| LLM | Gemini 2.5 Flash |
+| Deployment | Cloud Run (scales to zero) |
+| Email / Calendar | Self-hosted MCP servers over stdio |
+| Production database | AlloyDB, or any Postgres with pgvector |
+| Dev database | Postgres 16 + pgvector — same schema, no cloud cost |
+| Embeddings | text-embedding-005 (768d), swappable for Gemini API or local MiniLM |
+| Retrieval eval | recall@k, MRR@k, paired bootstrap — [RESULTS.md](evals/RESULTS.md) |
+
+No retrieval framework: plain SQL, ~20 lines of BM25, and reciprocal rank
+fusion written out. The mechanics stay legible so a moving number can be
+explained.
 
 ## Project Structure
 
@@ -465,10 +511,10 @@ Database options, cheapest first:
 
 | Option | Cost | Trade-off |
 |---|---|---|
-| Free managed Postgres (Neon, Supabase) | Free tier | Not a GCP product — check whether hackathon Track 3 scoring requires a Google database |
+| Free managed Postgres (Neon, Supabase) | Free tier | Not a GCP product, but pgvector works the same |
 | Postgres on the Always Free `e2-micro` VM | Free | You install and maintain it; e2-micro is small |
 | Cloud SQL Postgres | ~$8–10/mo smallest | Managed, in GCP, supports pgvector, no free tier |
-| AlloyDB | Free 90 days on trial credit, then significant | Best Track 3 story; stop the cluster when idle |
+| AlloyDB | Free 90 days on trial credit, then significant | Overkill at this corpus size; stop the cluster when idle |
 
 **Any Postgres with pgvector works** — that is what the portability work in
 `rag/db.py` bought. Only `DATABASE_URL` changes.
@@ -515,17 +561,17 @@ SmartDesk uses **per-user Google OAuth**. Each user signs in with their own Goog
 
 ## Sample Prompts
 
-**Email (Track 2 — Gmail MCP):**
+**Email** (Gmail MCP):
 - "Show me my latest emails"
 - "Search for emails from [colleague name]"
 - "Draft an email to test@example.com about the project update"
 
-**Calendar (Track 2 — Calendar MCP):**
+**Calendar** (Calendar MCP):
 - "What's on my schedule today?"
 - "Find free time slots for tomorrow"
 - "Create a meeting called 'Team Sync' tomorrow at 2pm to 3pm"
 
-**Knowledge Base (Track 3 — AlloyDB with vector search):**
+**Knowledge base** (vector search over notes):
 - "What are my pending tasks?"
 - "Search my notes about product launch"
 - "Add a task: Review Q2 budget with high priority, due 2026-04-10"
