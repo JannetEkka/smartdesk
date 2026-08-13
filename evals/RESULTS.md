@@ -4,9 +4,80 @@ Measurements for SmartDesk's notes retrieval, run in the order the work was
 done: harness first, then chunking, then reranking. Reproducible with the
 commands in [README](../README.md#evaluating-retrieval).
 
-**Headline: a cross-encoder reranking chunk retrieval is the only change that
-beat the baseline significantly — MRR@10 +0.094, R@1 +0.138, p = 0.04. It is
-implemented and switchable, but not the default, for reasons in §5.**
+> **Read §0 first.** The pipeline has now been measured on the production
+> embedder, and the conclusion is different from the development-embedder
+> result that the rest of this document describes.
+
+---
+
+## 0. On text-embedding-005, plain retrieval wins
+
+Everything in sections 2–4 was measured with all-MiniLM-L6-v2, because this
+environment had no Vertex credentials. That measurement has now been repeated
+against **text-embedding-005**, the production embedder, on 120 notes and 40
+questions.
+
+| strategy | R@1 | R@5 | MRR@10 | latency |
+|---|---|---|---|---|
+| **baseline** | **0.800** | 0.963 | **0.886** | 31 ms |
+| chunked | 0.800 | 0.963 | 0.885 | 24 ms |
+| hybrid-rrf | 0.775 | 0.950 | 0.870 | 52 ms |
+| baseline+rrf | 0.775 | 0.938 | 0.858 | 23 ms |
+| chunked+rrf | 0.750 | **0.975** | 0.859 | 37 ms |
+
+Paired bootstrap vs baseline on rr@10: every strategy is **negative**, and
+none is significant (p between 0.37 and 0.64).
+
+**Two things changed relative to the MiniLM runs.**
+
+First, the baseline got much better: R@1 0.700 → 0.800, MRR@10 0.814 → 0.886.
+A stronger embedder simply retrieves better, which is what you would hope.
+
+Second, and more usefully: **every reranker went from helping to hurting.**
+`chunked+rrf` was the second-best strategy on MiniLM at MRR@10 +0.047. On
+text-embedding-005 it is −0.027. The sign flipped.
+
+The mechanism is the one predicted in §9 before this was run: a stronger
+embedder produces better candidates, leaving less for a reranker to fix and
+more for it to break. When the top-5 is already correct 96% of the time,
+reordering has far more to lose than to gain.
+
+**This is the single most valuable result in this document**, because the
+MiniLM measurement alone would have justified shipping a cross-encoder that
+adds ~700 ms and several hundred MB of PyTorch to the deployed image — for
+nothing, on the embedder actually in production.
+
+### What is not measured here
+
+The two cross-encoder strategies were **not** re-run on text-embedding-005
+(`sentence-transformers` was not installed on the machine that ran it). Their
+MiniLM result — the one significant win in this document — therefore stands
+untested against the production embedder. Given that both RRF variants
+reversed sign, the honest expectation is that the cross-encoder advantage
+shrinks or reverses too, but that is a prediction, not a measurement.
+
+To close it:
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple sentence-transformers
+python evals/harness.py --strategies baseline chunked+cross-encoder --save vertex_ce
+```
+
+### Verdict
+
+`SMARTDESK_RETRIEVAL` stays on `baseline`. That was already the default for
+caution; it is now the default on evidence.
+
+---
+
+**Everything below was measured on all-MiniLM-L6-v2 and is retained because
+the reasoning still holds — but where it disagrees with §0, §0 is the one
+that reflects production.**
+
+**Headline (development embedder): a cross-encoder reranking chunk retrieval
+is the only change that beat the baseline significantly — MRR@10 +0.094,
+R@1 +0.138, p = 0.04.**
 
 ---
 
