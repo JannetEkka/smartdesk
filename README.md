@@ -27,6 +27,10 @@ locally, or the **Cloud Run service URL** once deployed — see
 [Running it](#running-it) for how to get that URL and how to deploy *with* the
 ADK UI attached. The OAuth and session-state design both assume a single user.
 
+> **Open work** is tracked in [ROADMAP.md](ROADMAP.md). The retrieval pipeline
+> is complete and measured; what remains is deployment plumbing and correcting
+> placeholder content in the eval corpus.
+
 ## Live deployment
 
 | | |
