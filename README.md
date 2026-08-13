@@ -27,6 +27,28 @@ locally, or the **Cloud Run service URL** once deployed — see
 [Running it](#running-it) for how to get that URL and how to deploy *with* the
 ADK UI attached. The OAuth and session-state design both assume a single user.
 
+## Live deployment
+
+| | |
+|---|---|
+| **Service URL** | _not yet deployed — fill in after `deploy_new_project.sh deploy`_ |
+| **ADK UI** | append `/dev-ui` to the service URL (only if deployed `--with_ui`) |
+| **Project** | `smartdesk-505315` |
+| **Region** | `us-central1` |
+| **Database** | _fill in: Neon / Cloud SQL / other_ |
+
+Retrieve the URL at any time:
+
+```bash
+gcloud run services describe smartdesk --region us-central1 --format='value(status.url)'
+```
+
+The service scales to zero, so an idle deployment costs nothing and the first
+request after a quiet period takes ~1.4s.
+
+> Sign-in only works for Google accounts on the OAuth consent screen's **test
+> users** list while the app is unverified. Anyone else gets a 403.
+
 ## Architecture
 
 ```
