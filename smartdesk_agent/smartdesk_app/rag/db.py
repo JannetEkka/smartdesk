@@ -20,6 +20,49 @@ logger = logging.getLogger(__name__)
 _engine = None
 
 
+def _split_sslmode(url: str) -> tuple[str, dict]:
+    """Turn a libpq ``?sslmode=`` parameter into pg8000 connect arguments.
+
+    Hosted Postgres (Neon, Supabase, Cloud SQL with SSL enforced) hands out
+    URLs ending in ``?sslmode=require``. pg8000 does not understand that as a
+    query parameter and, left to itself, does not attempt SSL at all — so the
+    server closes the connection and the error says nothing about TLS.
+
+    This strips the parameter and supplies the ``ssl_context`` pg8000 actually
+    wants. ``verify-ca`` and ``verify-full`` get certificate verification;
+    ``require`` encrypts without verifying, which is what libpq does too.
+    """
+    from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    params = parse_qs(parts.query)
+    sslmode = (params.pop("sslmode", [None])[0] or "").lower()
+    if not sslmode or sslmode in ("disable", "allow", "prefer"):
+        return url, {}
+
+    import ssl
+
+    context = ssl.create_default_context()
+    if sslmode == "require":
+        # libpq's "require" encrypts but does not authenticate the server.
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+
+    cleaned = urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(params, doseq=True), parts.fragment)
+    )
+    return cleaned, {"ssl_context": context}
+
+
+def _create_engine(url: str):
+    """Build an engine, translating libpq SSL parameters for pg8000."""
+    cleaned, connect_args = _split_sslmode(url)
+    if connect_args:
+        logger.info("Connecting with SSL (sslmode from DATABASE_URL).")
+        return sqlalchemy.create_engine(cleaned, connect_args=connect_args)
+    return sqlalchemy.create_engine(cleaned)
+
+
 def get_engine(url: str | None = None):
     """Create or return the cached SQLAlchemy engine.
 
@@ -29,13 +72,13 @@ def get_engine(url: str | None = None):
     """
     global _engine
     if url:
-        return sqlalchemy.create_engine(url)
+        return _create_engine(url)
     if _engine is not None:
         return _engine
 
     db_url = os.getenv("DATABASE_URL", "")
     if db_url:
-        _engine = sqlalchemy.create_engine(db_url)
+        _engine = _create_engine(db_url)
     else:
         user = os.getenv("ALLOYDB_USER", "postgres")
         password = os.getenv("ALLOYDB_PASSWORD", "")
