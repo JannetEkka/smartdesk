@@ -1,10 +1,31 @@
-# SmartDesk — Multi-Agent Productivity Assistant
+# SmartDesk — Multi-Agent Assistant with a Measured RAG Pipeline
 
-A multi-agent AI system built with **Google ADK**, **Gemini 2.5 Flash**, **MCP**, and **AlloyDB** for the **Google Cloud Hackathon** (Multi-Agent Productivity Assistant track).
+A single-user personal assistant built on **Google ADK**, **Gemini 2.5 Flash**,
+**MCP**, and **Postgres/pgvector**, with a retrieval pipeline whose quality is
+**measured rather than assumed**.
 
-SmartDesk is a single chat interface backed by a team of specialized agents that handle email, calendar, and a personal knowledge base — so you can ask things like *"what's on my plate today?"* and get an answer that spans your inbox, schedule, and notes.
+SmartDesk is one chat interface over three specialised agents — email, calendar,
+and a personal knowledge base — so *"what's on my plate today?"* returns an
+answer spanning all three.
 
-**Scope:** a single-user personal project. There is no web frontend — the interface is ADK's dev UI (`adk web`) locally, or an HTTP request against the Cloud Run service. The OAuth and session-state design both assume one user; see [`evals/RESULTS.md`](evals/RESULTS.md) and the corpus notes for where that assumption is baked in.
+**The retrieval evaluation is the point.** Most RAG projects ship chunking and
+reranking because the techniques are standard. This one has a labelled question
+set, recall@k and MRR@k with confidence intervals, and committed numbers for
+every variant. On this corpus the standard techniques **did not help**, and the
+measurement is what proved it — including a case where the same reranker looked
+like a clear winner on one embedder and a clear loser on the production one.
+Start at [`evals/RESULTS.md`](evals/RESULTS.md).
+
+**Scope and history.** Originally built for the Google Cloud Multi-Agent
+Productivity Assistant hackathon; now a personal project kept for its own sake
+and as a worked example of retrieval evaluation. The eval corpus is a knowledge
+base of that history, hackathon logistics included, because that is what was
+actually going on while it was built.
+
+There is no custom web frontend. The interface is ADK's own dev UI (`adk web`)
+locally, or the **Cloud Run service URL** once deployed — see
+[Running it](#running-it) for how to get that URL and how to deploy *with* the
+ADK UI attached. The OAuth and session-state design both assume a single user.
 
 ## Architecture
 
