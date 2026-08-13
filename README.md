@@ -27,15 +27,20 @@ locally, or the **Cloud Run service URL** once deployed — see
 [Running it](#running-it) for how to get that URL and how to deploy *with* the
 ADK UI attached. The OAuth and session-state design both assume a single user.
 
+> **Open work** is tracked in [ROADMAP.md](ROADMAP.md). The retrieval pipeline
+> is complete and measured; what remains is deployment plumbing and correcting
+> placeholder content in the eval corpus.
+
 ## Live deployment
 
 | | |
 |---|---|
-| **Service URL** | _not yet deployed — fill in after `deploy_new_project.sh deploy`_ |
-| **ADK UI** | append `/dev-ui` to the service URL (only if deployed `--with_ui`) |
+| **Service URL** | https://smartdesk-845464976589.us-central1.run.app |
+| **ADK UI** | https://smartdesk-845464976589.us-central1.run.app/dev-ui |
 | **Project** | `smartdesk-505315` |
 | **Region** | `us-central1` |
-| **Database** | _fill in: Neon / Cloud SQL / other_ |
+| **Database** | Neon (serverless Postgres + pgvector, free tier, scales to zero) |
+| **Embedder** | `text-embedding-005` via Vertex AI |
 
 Retrieve the URL at any time:
 
@@ -343,7 +348,15 @@ adk deploy cloud_run \
   ./smartdesk_app
 ```
 
-Drop `--with_ui` for an API-only service. To deploy the Dockerfile instead:
+Drop `--with_ui` for an API-only service.
+
+> `adk deploy cloud_run` copies **only the agent directory** and generates its
+> own Dockerfile, so the repository-root `requirements.txt` is never seen by
+> that build. `smartdesk_app/requirements.txt` exists for exactly this reason —
+> keep the two in sync, or a deployment made this way fails at import with a
+> missing module.
+
+To deploy the repository Dockerfile instead:
 
 ```bash
 gcloud run deploy smartdesk \
